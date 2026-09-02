@@ -13,8 +13,16 @@ export async function POST(req: NextRequest) {
       `&scope=${encodeURIComponent('boards:read boards:write')}`,
   })
 
-  // Stash credentials in short-lived cookies for the callback to use
-  const opts = { httpOnly: true, maxAge: 600, path: '/' } as const
+  // Stash credentials in short-lived cookies for the callback to use.
+  // `secure` in production so they are never sent over plain HTTP; sameSite
+  // 'lax' because the OAuth provider redirects back cross-site.
+  const opts = {
+    httpOnly: true,
+    maxAge: 600,
+    path: '/',
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production',
+  } as const
   res.cookies.set('miro-client-id', clientId, opts)
   res.cookies.set('miro-client-secret', clientSecret, opts)
   res.cookies.set('miro-redirect-uri', redirectUri, opts)

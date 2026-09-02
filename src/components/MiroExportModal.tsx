@@ -81,6 +81,13 @@ export default function MiroExportModal({ getExportData, kinds, onClose }: Props
     setError(null)
   }
 
+  // Built from the live origin so the instructions are right on localhost and
+  // on a deployed URL alike, rather than hardcoding a dev port.
+  const [redirectUri, setRedirectUri] = useState('/api/miro/callback')
+  useEffect(() => {
+    setRedirectUri(`${window.location.origin}/api/miro/callback`)
+  }, [])
+
   const [pasteMode, setPasteMode] = useState(false)
   const [pasteToken, setPasteToken] = useState('')
 
@@ -196,7 +203,7 @@ export default function MiroExportModal({ getExportData, kinds, onClose }: Props
                     Miro → Profile → Apps
                   </a>
                   , build a new app, and add{' '}
-                  <code className="bg-gray-200 px-1 rounded">http://localhost:3099/api/miro/callback</code>{' '}
+                  <code className="bg-gray-200 px-1 rounded">{redirectUri}</code>{' '}
                   as a redirect URI. Then paste the Client ID and Secret below.
                 </div>
                 <div>
