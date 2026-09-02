@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { requireAuth } from '@/lib/require-auth'
 import { migrateFieldType } from '@/lib/field-type-meta'
 import { DISPLAY_FIELD_TYPES, toCmaField, toId, uniqueId, type CmaField } from '@/lib/contentful-map'
 import type { FieldType } from '@/lib/types'
@@ -142,6 +143,9 @@ function buildPlan(
 }
 
 export async function POST(req: NextRequest) {
+  const denied = await requireAuth()
+  if (denied) return denied
+
   try {
     const {
       nodes,

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { requireAuth } from '@/lib/require-auth'
 import {
   FIELD_TYPE_META,
   DEFAULT_KINDS,
@@ -59,6 +60,9 @@ async function fetchAllItems(token: string, boardId: string): Promise<MiroItem[]
 }
 
 export async function POST(req: NextRequest) {
+  const denied = await requireAuth()
+  if (denied) return denied
+
   try {
     const { nodes, edges, boardId: rawBoardId, token, kinds: rawKinds } = (await req.json()) as {
       nodes: ExportNode[]; edges: ExportEdge[]; boardId: string; token: string; kinds?: KindDef[]

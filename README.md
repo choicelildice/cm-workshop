@@ -47,6 +47,25 @@ npm run dev
 
 Then open the dev server URL it prints.
 
+## Password protection
+
+Set `APP_PASSWORD` and the whole app sits behind a password. Leave it unset and
+the app is open, which is the right default for local use.
+
+```bash
+# .env.local (gitignored)
+APP_PASSWORD=your-password
+```
+
+On Vercel, add `APP_PASSWORD` under Project → Settings → Environment Variables
+and redeploy. Vercel's own Password Protection is a Pro feature; this works on
+the free Hobby plan.
+
+The check runs on the server: the page is never sent to the browser without a
+valid session cookie, and the API routes reject unauthenticated calls
+independently, so the gate can't be bypassed by calling them directly. The
+browser only ever holds an HMAC of the password, never the password itself.
+
 ## Credentials
 
 **No keys are stored in this repository.** Both integrations ask for credentials
