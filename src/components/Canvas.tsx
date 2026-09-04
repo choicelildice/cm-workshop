@@ -37,6 +37,11 @@ interface CanvasProps {
     addImageNode: (file: File) => void
     clearBoard: () => void
     getExportData: () => { nodes: unknown[]; edges: unknown[] }
+    importContentTypes: (types: {
+      cmaId: string
+      name: string
+      fields: { cmaId: string; name: string; type: string; required: boolean; isArray: boolean; linkTargets: string[] }[]
+    }[]) => void
   }) => void
 }
 
@@ -327,6 +332,95 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
     [setNodes, handleDeleteImage]
   )
 
+
+  /**
+   * Adds content types imported from a Contentful space.
+   *
+   * Laid out on a grid to the right of whatever is already on the board, so an
+   * import never lands on top of existing work. Reference arrows are recreated
+   * from each field's linkContentType validations.
+   */
+  const importContentTypes = useCallback(
+    (types: {
+      cmaId: string
+      name: string
+      fields: { cmaId: string; name: string; type: string; required: boolean; isArray: boolean; linkTargets: string[] }[]
+    }[]) => {
+      if (!types.length) return
+      mark()
+
+      // Start clear of existing content
+      const existing = nodesRef.current
+      const startX = existing.length
+        ? Math.max(...existing.map((n) => n.position.x + (n.measured?.width ?? 220))) + 120
+        : 0
+      const startY = existing.length ? Math.min(...existing.map((n) => n.position.y)) : 0
+
+      const COLS = 3
+      const COL_W = 260
+      const ROW_H = 320
+
+      // cmaId -> new node id, so edges can be wired after all nodes exist
+      const idMap = new Map<string, string>()
+      // cmaId -> field cmaId -> generated field id, for edge source handles
+      const fieldMap = new Map<string, Map<string, string>>()
+
+      const newNodes: Node[] = types.map((t, i) => {
+        const nodeId = uuidv4()
+        idMap.set(t.cmaId, nodeId)
+
+        const fieldIds = new Map<string, string>()
+        const fields: ContentField[] = t.fields.map((f) => {
+          const fid = uuidv4()
+          fieldIds.set(f.cmaId, fid)
+          return {
+            id: fid,
+            name: f.name,
+            type: migrateFieldType(f.type),
+            required: f.required,
+            isArray: f.isArray,
+          }
+        })
+        fieldMap.set(t.cmaId, fieldIds)
+
+        return {
+          id: nodeId,
+          type: 'contentType',
+          position: {
+            x: startX + (i % COLS) * COL_W,
+            y: startY + Math.floor(i / COLS) * ROW_H,
+          },
+          data: makeContentTypeData(t.name, fields) as unknown as Record<string, unknown>,
+        }
+      })
+
+      const newEdges: Edge[] = []
+      for (const t of types) {
+        const sourceId = idMap.get(t.cmaId)!
+        const fieldIds = fieldMap.get(t.cmaId)!
+        for (const f of t.fields) {
+          for (const target of f.linkTargets) {
+            const targetId = idMap.get(target)
+            if (!targetId) continue
+            newEdges.push({
+              id: `e-${sourceId}-${fieldIds.get(f.cmaId)}-${targetId}`,
+              source: sourceId,
+              target: targetId,
+              sourceHandle: `field-${fieldIds.get(f.cmaId)}`,
+              animated: false,
+              style: { stroke: '#0891B2', strokeWidth: 2 },
+            })
+          }
+        }
+      }
+
+      setNodes((nds) => [...nds, ...newNodes])
+      setEdges((eds) => [...eds, ...newEdges])
+      setTimeout(() => fitViewRef.current?.(), 60)
+    },
+    [setNodes, setEdges, makeContentTypeData, mark]
+  )
+
   // Enter placement mode for a content type
   const addContentType = useCallback((name: string) => {
     placementRef.current = { type: 'contentType', name }
@@ -423,8 +517,8 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
   }, [setNodes, setEdges])
 
   useEffect(() => {
-    onReady({ addContentType, addImageNode, clearBoard, getExportData })
-  }, [onReady, addContentType, addImageNode, clearBoard, getExportData])
+    onReady({ addContentType, addImageNode, clearBoard, getExportData, importContentTypes })
+  }, [onReady, addContentType, addImageNode, clearBoard, getExportData, importContentTypes])
 
   const restoredRef = useRef(false)
   const fitViewRef = useRef<(() => void) | null>(null)

@@ -49,6 +49,66 @@ const MAP: Record<FieldType, Mapping> = {
 export const DISPLAY_FIELD_TYPES = new Set(['Symbol'])
 
 /**
+ * Reverse of MAP, for importing an existing space onto the canvas.
+ *
+ * The CMA has more types than the dialog does, so this collapses them:
+ * Symbol and Text both become "text", Integer and Number both "number". An
+ * Array field is unwrapped to its item type plus `isArray`.
+ */
+export function fromCmaField(f: {
+  type: string
+  linkType?: string
+  items?: { type?: string; linkType?: string; validations?: unknown[] }
+  validations?: unknown[]
+}): { fieldType: FieldType; isArray: boolean; linkTargets: string[] } {
+  const isArray = f.type === 'Array'
+  const type = isArray ? (f.items?.type ?? 'Symbol') : f.type
+  const linkType = isArray ? f.items?.linkType : f.linkType
+
+  const validations = (isArray ? f.items?.validations : f.validations) ?? []
+  const linkTargets =
+    (validations.find(
+      (v): v is { linkContentType: string[] } =>
+        !!v && typeof v === 'object' && 'linkContentType' in v
+    )?.linkContentType) ?? []
+
+  let fieldType: FieldType
+  switch (type) {
+    case 'Symbol':
+    case 'Text':
+      fieldType = 'text'
+      break
+    case 'RichText':
+      fieldType = 'richText'
+      break
+    case 'Integer':
+    case 'Number':
+      fieldType = 'number'
+      break
+    case 'Date':
+      fieldType = 'dateTime'
+      break
+    case 'Location':
+      fieldType = 'location'
+      break
+    case 'Boolean':
+      fieldType = 'boolean'
+      break
+    case 'Object':
+      fieldType = 'json'
+      break
+    case 'Link':
+      fieldType = linkType === 'Asset' ? 'media' : 'reference'
+      break
+    default:
+      // Unknown/new CMA type — keep the field rather than dropping it
+      fieldType = 'text'
+  }
+
+  return { fieldType, isArray, linkTargets }
+}
+
+/**
  * camelCase id from a human label. Contentful ids must start with a letter and
  * contain only alphanumerics; anything else is stripped.
  */

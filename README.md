@@ -24,6 +24,11 @@ board. Labels and colours are configurable, so you can rename Topic to Content o
 recolour the set to match your team's vocabulary; kind ids stay stable, so
 renaming never breaks existing boards.
 
+**Import from Contentful.** Pull an existing model onto the canvas — all of it
+or just the types you pick. Fields, required flags, list flags, and the
+references between imported types are all reconstructed. Read-only, and laid out
+clear of whatever is already on the board.
+
 **Export to Contentful.** Generates content types over the Content Management
 API. Reference arrows become real `linkContentType` validations. You review a
 full plan — ids, field types, link targets, warnings — before anything is
@@ -109,6 +114,10 @@ Nothing is sent anywhere except to Contentful's and Miro's own APIs.
 A field marked as a list becomes `Array` with the matching `items` descriptor.
 Rich text, Location, and JSON have no list form in Contentful and stay scalar
 (the plan warns when this applies).
+
+Importing collapses the wider CMA set back down: `Symbol` and `Text` both arrive
+as Text, `Integer` and `Number` both as Number, and an `Array` is unwrapped to
+its item type with the list flag set. Omitted fields are skipped.
 
 ## Stack
 

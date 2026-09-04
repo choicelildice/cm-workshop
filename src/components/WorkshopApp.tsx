@@ -2,10 +2,11 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import dynamic from 'next/dynamic'
-import { ImageIcon, PlusSquare, ExternalLink, Trash2, Settings, UploadCloud } from 'lucide-react'
+import { ImageIcon, PlusSquare, ExternalLink, Trash2, Settings, UploadCloud, DownloadCloud } from 'lucide-react'
 import FieldLibrary from '@/components/FieldLibrary'
 import MiroExportModal from '@/components/MiroExportModal'
 import ContentfulExportModal from '@/components/ContentfulExportModal'
+import ContentfulImportModal from '@/components/ContentfulImportModal'
 import ProjectMenu from '@/components/ProjectMenu'
 import KindSettingsModal from '@/components/KindSettingsModal'
 import { ensureCurrentProject, setCurrentProjectId } from '@/lib/projects'
@@ -19,6 +20,11 @@ interface CanvasActions {
   addImageNode: (file: File) => void
   clearBoard: () => void
   getExportData: () => { nodes: unknown[]; edges: unknown[] }
+  importContentTypes: (types: {
+    cmaId: string
+    name: string
+    fields: { cmaId: string; name: string; type: string; required: boolean; isArray: boolean; linkTargets: string[] }[]
+  }[]) => void
 }
 
 export default function WorkshopApp() {
@@ -29,6 +35,7 @@ export default function WorkshopApp() {
   const [confirmClear, setConfirmClear] = useState(false)
   const [showMiroExport, setShowMiroExport] = useState(false)
   const [showCfExport, setShowCfExport] = useState(false)
+  const [showCfImport, setShowCfImport] = useState(false)
   // Resolved on the client only — localStorage isn't available during SSR
   const [projectId, setProjectId] = useState<string | null>(null)
   const [kinds, setKinds] = useState<KindDef[]>(DEFAULT_KINDS)
@@ -195,6 +202,15 @@ export default function WorkshopApp() {
           Kinds
         </button>
 
+        {/* Import from Contentful */}
+        <button
+          className="flex items-center gap-1.5 text-base font-medium text-gray-800 hover:text-blue-700 hover:bg-blue-50 px-3 py-1.5 rounded-lg transition-colors border border-gray-300 hover:border-blue-300"
+          onClick={() => setShowCfImport(true)}
+        >
+          <DownloadCloud size={14} />
+          Import
+        </button>
+
         {/* Export to Contentful */}
         <button
           className="flex items-center gap-1.5 text-base font-semibold text-white px-3 py-1.5 rounded-lg transition-opacity hover:opacity-90"
@@ -220,6 +236,13 @@ export default function WorkshopApp() {
           kinds={kinds}
           onChange={setKinds}
           onClose={() => setShowKindSettings(false)}
+        />
+      )}
+
+      {showCfImport && (
+        <ContentfulImportModal
+          onImport={(types) => actionsRef.current?.importContentTypes(types)}
+          onClose={() => setShowCfImport(false)}
         />
       )}
 
