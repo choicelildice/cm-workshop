@@ -89,6 +89,9 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
   // Last snapped position during a drag, re-applied on release so the final
   // change from React Flow doesn't revert the node off the guide.
   const lastSnapRef = useRef<{ id: string; position: { x: number; y: number } } | null>(null)
+  // True between the first drag frame and release, so a drag records one
+  // history entry rather than one per animation frame.
+  const draggingRef = useRef(false)
   // Image ids already written to IndexedDB. A node's imageUrl never changes
   // after creation, so each blob only ever needs to be stored once.
   const savedImagesRef = useRef<Set<string>>(new Set())
@@ -96,15 +99,22 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const screenToFlowRef = useRef<((pos: { x: number; y: number }) => { x: number; y: number }) | null>(null)
 
+  // pushHistory is defined further down (it needs serializeNodes), so handlers
+  // above it call through this ref.
+  const pushHistoryRef = useRef<() => void>(() => {})
+  const mark = useCallback(() => pushHistoryRef.current(), [])
+
   const onConnect = useCallback(
-    (connection: Connection) =>
-      setEdges((eds) =>
+    (connection: Connection) => {
+      mark()
+      return setEdges((eds) =>
         addEdge(
           { ...connection, animated: false, style: { stroke: '#0891B2', strokeWidth: 2 } },
           eds
         )
-      ),
-    [setEdges]
+      )
+    },
+    [setEdges, mark]
   )
 
   const handleAddField = useCallback((nodeId: string) => {
@@ -113,6 +123,7 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
 
   const handleDeleteField = useCallback(
     (nodeId: string, fieldId: string) => {
+      mark()
       setNodes((nds) =>
         nds.map((n) => {
           if (n.id !== nodeId) return n
@@ -121,11 +132,12 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
         })
       )
     },
-    [setNodes]
+    [setNodes, mark]
   )
 
   const handleRenameType = useCallback(
     (nodeId: string, newName: string) => {
+      mark()
       setNodes((nds) =>
         nds.map((n) => {
           if (n.id !== nodeId) return n
@@ -133,11 +145,12 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
         })
       )
     },
-    [setNodes]
+    [setNodes, mark]
   )
 
   const handleSetTypeKind = useCallback(
     (nodeId: string, kind?: ContentTypeKind) => {
+      mark()
       setNodes((nds) =>
         nds.map((n) => {
           if (n.id !== nodeId) return n
@@ -145,11 +158,12 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
         })
       )
     },
-    [setNodes]
+    [setNodes, mark]
   )
 
   const handleSetTypeEmoji = useCallback(
     (nodeId: string, emoji?: string) => {
+      mark()
       setNodes((nds) =>
         nds.map((n) => {
           if (n.id !== nodeId) return n
@@ -157,26 +171,29 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
         })
       )
     },
-    [setNodes]
+    [setNodes, mark]
   )
 
   const handleDeleteType = useCallback(
     (nodeId: string) => {
+      mark()
       setNodes((nds) => nds.filter((n) => n.id !== nodeId))
       setEdges((eds) => eds.filter((e) => e.source !== nodeId && e.target !== nodeId))
     },
-    [setNodes, setEdges]
+    [setNodes, setEdges, mark]
   )
 
   const handleDeleteImage = useCallback(
     (nodeId: string) => {
+      mark()
       setNodes((nds) => nds.filter((n) => n.id !== nodeId))
     },
-    [setNodes]
+    [setNodes, mark]
   )
 
   const handleDropField = useCallback(
     (nodeId: string, field: Omit<ContentField, 'id'>) => {
+      mark()
       const newField: ContentField = { ...field, id: uuidv4() }
       setNodes((nds) =>
         nds.map((n) => {
@@ -186,7 +203,7 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
         })
       )
     },
-    [setNodes]
+    [setNodes, mark]
   )
 
   const handleCopyField = useCallback((field: ContentField) => {
@@ -196,6 +213,7 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
   const handlePasteField = useCallback(
     (nodeId: string) => {
       if (!clipboard) return
+      mark()
       const newField: ContentField = { ...clipboard, id: uuidv4() }
       setNodes((nds) =>
         nds.map((n) => {
@@ -205,11 +223,12 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
         })
       )
     },
-    [clipboard, setNodes]
+    [clipboard, setNodes, mark]
   )
 
   const handleFieldAdded = useCallback(
     (nodeId: string, field: Omit<ContentField, 'id'>) => {
+      mark()
       const newField: ContentField = { ...field, id: uuidv4() }
       setNodes((nds) =>
         nds.map((n) => {
@@ -219,12 +238,13 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
         })
       )
     },
-    [setNodes]
+    [setNodes, mark]
   )
 
   // Move a field to a new index within its own content type
   const handleReorderField = useCallback(
     (nodeId: string, fieldId: string, toIndex: number) => {
+      mark()
       setNodes((nds) =>
         nds.map((n) => {
           if (n.id !== nodeId) return n
@@ -242,7 +262,7 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
         })
       )
     },
-    [setNodes]
+    [setNodes, mark]
   )
 
   const makeContentTypeData = useCallback(
@@ -288,6 +308,7 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
   // Internal: actually create a CT node at a flow position
   const placeContentTypeAt = useCallback(
     (name: string, position: { x: number; y: number }) => {
+      mark()
       const id = uuidv4()
       const data = makeContentTypeData(name)
       setNodes((nds) => [...nds, { id, type: 'contentType', position, data: data as unknown as Record<string, unknown> }])
@@ -298,6 +319,7 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
   // Internal: actually create an image node at a flow position
   const placeImageAt = useCallback(
     (file: File, imageUrl: string, position: { x: number; y: number }) => {
+      mark()
       const id = uuidv4()
       const data: ImageNodeData = { imageUrl, label: file.name, onDelete: handleDeleteImage }
       setNodes((nds) => [...nds, { id, type: 'image', position, data: data as unknown as Record<string, unknown> }])
@@ -395,6 +417,7 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
   // Empties the open project only. Images referenced by other projects are
   // left alone; the blob cleanup effect removes whatever is now unreferenced.
   const clearBoard = useCallback(() => {
+    mark()
     setNodes([])
     setEdges([])
   }, [setNodes, setEdges])
@@ -473,6 +496,107 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
   const loadedProjectRef = useRef<string | null>(null)
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  // ── Undo / redo ─────────────────────────────────────────────────────
+  // Snapshots hold serialized nodes (no callbacks or image blobs) plus edges.
+  // Callbacks are re-attached on restore, exactly as the project loader does,
+  // so an undone node stays interactive.
+  interface Snapshot { nodes: Node[]; edges: Edge[] }
+  const undoStackRef = useRef<Snapshot[]>([])
+  const redoStackRef = useRef<Snapshot[]>([])
+  // Set while an undo/redo is being applied, so the resulting state change
+  // isn't itself recorded as a new history entry.
+  const applyingHistoryRef = useRef(false)
+  const HISTORY_LIMIT = 50
+
+  const snapshot = useCallback(
+    (): Snapshot => ({
+      nodes: serializeNodes(nodesRef.current) as Node[],
+      edges: edgesRef.current.map((e) => ({ ...e })),
+    }),
+    [serializeNodes]
+  )
+
+  /** Records the current state as an undo point. Call BEFORE mutating. */
+  const pushHistory = useCallback(() => {
+    if (applyingHistoryRef.current || !restoredRef.current) return
+    undoStackRef.current.push(snapshot())
+    if (undoStackRef.current.length > HISTORY_LIMIT) undoStackRef.current.shift()
+    // Any new action invalidates the redo branch
+    redoStackRef.current = []
+  }, [snapshot])
+
+  /** Re-attaches callbacks to serialized nodes so they work after restore. */
+  const rehydrate = useCallback(
+    (ns: Node[]): Node[] =>
+      ns.map((n) => {
+        if (n.type === 'contentType') {
+          const d = n.data as unknown as {
+            label: string; fields: ContentField[]; kind?: ContentTypeKind; emoji?: string
+          }
+          return {
+            ...n,
+            data: makeContentTypeData(d.label, d.fields, d.kind, d.emoji) as unknown as Record<string, unknown>,
+          }
+        }
+        if (n.type === 'image') {
+          // imageUrl was stripped for the snapshot; recover it from the live
+          // node, since the blob itself never changes once created.
+          const live = nodesRef.current.find((x) => x.id === n.id)
+          const imageUrl = (live?.data as unknown as ImageNodeData | undefined)?.imageUrl ?? ''
+          return { ...n, data: { ...n.data, imageUrl, onDelete: handleDeleteImage } }
+        }
+        return n
+      }),
+    [makeContentTypeData, handleDeleteImage]
+  )
+
+  const applySnapshot = useCallback(
+    (snap: Snapshot) => {
+      applyingHistoryRef.current = true
+      setNodes(rehydrate(snap.nodes))
+      setEdges(snap.edges)
+      // Cleared after the state updates have flushed
+      setTimeout(() => { applyingHistoryRef.current = false }, 0)
+    },
+    [rehydrate, setNodes, setEdges]
+  )
+
+  // Handlers above reach pushHistory through this ref
+  pushHistoryRef.current = pushHistory
+
+  const undo = useCallback(() => {
+    const prev = undoStackRef.current.pop()
+    if (!prev) return
+    redoStackRef.current.push(snapshot())
+    applySnapshot(prev)
+  }, [snapshot, applySnapshot])
+
+  const redo = useCallback(() => {
+    const next = redoStackRef.current.pop()
+    if (!next) return
+    undoStackRef.current.push(snapshot())
+    applySnapshot(next)
+  }, [snapshot, applySnapshot])
+
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== 'z') return
+
+      // Let text fields keep their own native undo
+      const t = e.target as HTMLElement | null
+      if (t) {
+        const tag = t.tagName
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || t.isContentEditable) return
+      }
+
+      e.preventDefault()
+      if (e.shiftKey) redo()
+      else undo()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [undo, redo])
+
   // Persist the board, debounced so a drag produces one write on settle
   // rather than one per animation frame.
   useEffect(() => {
@@ -503,6 +627,11 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
       }
       saveProjectData(previous, { nodes: serializeNodes(nodesRef.current), edges: edgesRef.current })
     }
+
+    // History belongs to one board; carrying it across a switch would let an
+    // undo paste another project's contents in.
+    undoStackRef.current = []
+    redoStackRef.current = []
 
     // Block saving until the incoming board is in memory, so an empty canvas
     // can't overwrite the project we're about to read.
@@ -572,6 +701,7 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
       if (nodeIds.size === 0 && edgeIds.size === 0) return
 
       e.preventDefault()
+      pushHistoryRef.current()
       setNodes((nds) => nds.filter((n) => !nodeIds.has(n.id)))
       // Drop selected edges, and any edge left dangling by a deleted node
       setEdges((eds) =>
@@ -618,6 +748,11 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
       const drag = posChanges[0]
 
       if (drag?.dragging && drag.position) {
+        // One history entry per gesture: record on the first frame only.
+        if (!draggingRef.current) {
+          draggingRef.current = true
+          pushHistoryRef.current()
+        }
         // Snap only for a single-node drag; multi-select keeps relative layout
         if (posChanges.length === 1) {
           const dragged = nodes.find((n) => n.id === drag.id)
@@ -629,6 +764,7 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
           }
         }
       } else if (drag && !drag.dragging) {
+        draggingRef.current = false
         // Drag released. React Flow derives this final position from its own
         // drag delta, not from the snapped value we wrote during the drag, so
         // without this the node jumps back off the guide by the snap offset.
