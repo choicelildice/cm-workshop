@@ -92,15 +92,24 @@ export default function WorkshopApp() {
     setIncoming(null)
   }, [])
 
-  // Catch the OAuth callback token and open the export modal
+  // Catch the OAuth callback token and open the export modal. The token arrives
+  // in the fragment rather than a query param so it is never sent to the server
+  // (see the comment in api/miro/callback).
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search)
+    const hash = window.location.hash
+    // Share links also use the fragment, so only handle a miro_* one here
+    if (!hash.startsWith('#miro_token=') && !hash.startsWith('#miro_error=')) return
+
+    const params = new URLSearchParams(hash.slice(1))
     const token = params.get('miro_token')
+    // Clear the fragment either way, so a reload can't replay it
+    window.history.replaceState({}, '', window.location.pathname + window.location.search)
+
     if (token) {
       try { localStorage.setItem('miro-token', token) } catch {}
-      window.history.replaceState({}, '', window.location.pathname)
-      setShowMiroExport(true)
     }
+    // Reopen the modal on success and on failure, so a failed connect is visible
+    setShowMiroExport(true)
   }, [])
 
   const handleCanvasReady = useCallback((actions: CanvasActions) => {

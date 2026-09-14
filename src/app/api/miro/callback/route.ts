@@ -8,8 +8,15 @@ export async function GET(req: NextRequest) {
   const clientSecret = cookieStore.get('miro-client-secret')?.value
   const redirectUri = cookieStore.get('miro-redirect-uri')?.value
 
-  const fail = (msg: string) =>
-    NextResponse.redirect(new URL(`/?miro_error=${encodeURIComponent(msg)}`, req.nextUrl.origin))
+  // Fixed codes in the fragment, never the upstream error body: a query param
+  // would be logged, and echoing an upstream body risks leaking request detail.
+  // Nothing reads this yet; it exists so a failed connect doesn't look like a
+  // silent success.
+  const fail = (code: 'auth_incomplete' | 'token_exchange_failed') => {
+    const dest = new URL('/', req.nextUrl.origin)
+    dest.hash = `miro_error=${code}`
+    return NextResponse.redirect(dest)
+  }
 
   if (!code || !clientId || !clientSecret || !redirectUri) return fail('auth_incomplete')
 
@@ -29,16 +36,19 @@ export async function GET(req: NextRequest) {
     if (!tokenRes.ok) throw new Error(await tokenRes.text())
     const { access_token } = await tokenRes.json()
 
-    // Pass token back as a query param — page.tsx stores it in localStorage and removes it
+    // Pass the token back in the FRAGMENT, not a query param. A query param
+    // means the browser makes a real request carrying the token, so it lands in
+    // the server's request logs; fragments are never sent to the server.
+    // WorkshopApp reads it from location.hash and clears it.
     const dest = new URL('/', req.nextUrl.origin)
-    dest.searchParams.set('miro_token', access_token)
+    dest.hash = `miro_token=${encodeURIComponent(access_token)}`
 
     const res = NextResponse.redirect(dest)
     res.cookies.delete('miro-client-id')
     res.cookies.delete('miro-client-secret')
     res.cookies.delete('miro-redirect-uri')
     return res
-  } catch (err) {
-    return fail(err instanceof Error ? err.message : 'token_exchange_failed')
+  } catch {
+    return fail('token_exchange_failed')
   }
 }

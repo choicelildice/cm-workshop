@@ -28,7 +28,7 @@ export default function MiroExportModal({ getExportData, kinds, onClose }: Props
   useEffect(() => {
     try {
       setClientId(localStorage.getItem('miro-client-id') ?? '')
-      setClientSecret(localStorage.getItem('miro-client-secret') ?? '')
+      // clientSecret is deliberately NOT restored: see handleConnect
       setToken(localStorage.getItem('miro-token'))
       setBoardId(localStorage.getItem('miro-board-id') ?? '')
     } catch {}
@@ -38,8 +38,13 @@ export default function MiroExportModal({ getExportData, kinds, onClose }: Props
     setError(null)
     setLoading(true)
     try {
+      // The client id is not secret and is worth remembering. The client
+      // SECRET is a long-lived app credential, is only needed for this one
+      // round-trip (the server holds it in a 600s cookie for the callback),
+      // and so is kept in React state only. Any value stored by an earlier
+      // version is removed here.
       localStorage.setItem('miro-client-id', clientId)
-      localStorage.setItem('miro-client-secret', clientSecret)
+      localStorage.removeItem('miro-client-secret')
       const res = await fetch('/api/miro/connect', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

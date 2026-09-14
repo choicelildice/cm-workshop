@@ -41,10 +41,24 @@ const LEGACY_FIELD_TYPES: Record<string, FieldType> = {
   array: 'reference',   // the old "Array" was only ever used for linked lists
 }
 
-/** Maps a stored field type onto a current one. */
+/** Every valid field type id, for validating untrusted input. */
+export const FIELD_TYPE_IDS = Object.keys(FIELD_TYPE_META) as FieldType[]
+
+export function isFieldType(t: unknown): t is FieldType {
+  return typeof t === 'string' && Object.hasOwn(FIELD_TYPE_META, t)
+}
+
+/**
+ * Maps a stored field type onto a current one.
+ *
+ * Uses Object.hasOwn rather than `in`: `in` walks the prototype chain, so
+ * "constructor", "toString", "__proto__" and "hasOwnProperty" all passed the
+ * guard and were returned as if they were real field types. The icon lookup
+ * then resolved up the chain to a non-component, and rendering it threw.
+ */
 export function migrateFieldType(t: string): FieldType {
-  if (t in FIELD_TYPE_META) return t as FieldType
-  return LEGACY_FIELD_TYPES[t] ?? 'text'
+  if (isFieldType(t)) return t
+  return Object.hasOwn(LEGACY_FIELD_TYPES, t) ? LEGACY_FIELD_TYPES[t] : 'text'
 }
 
 /**

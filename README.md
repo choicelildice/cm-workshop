@@ -82,6 +82,14 @@ On Vercel, add `APP_PASSWORD` under Project → Settings → Environment Variabl
 and redeploy. Vercel's own Password Protection is a Pro feature; this works on
 the free Hobby plan.
 
+**Use a long random value, not a word.** The session cookie is an HMAC keyed by
+the password, which resists inversion but not guessing: anyone holding a cookie
+can dictionary-attack it offline. There is also no rate limiting on the login.
+
+In production the app **refuses to start** without `APP_PASSWORD`, so a missing
+or misspelled variable cannot silently expose it. Set `ALLOW_NO_PASSWORD=1` to
+run publicly without a gate on purpose.
+
 The check runs on the server: the page is never sent to the browser without a
 valid session cookie, and the API routes reject unauthenticated calls
 independently, so the gate can't be bypassed by calling them directly. The

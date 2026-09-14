@@ -10,9 +10,18 @@
  * copies the board into the recipient's browser. It does not stay in sync.
  */
 
+import { isFieldType, migrateFieldType } from './field-type-meta'
+
 export const SHARE_PREFIX = '#p='
 /** Above this, browsers and chat clients start truncating links. */
 export const URL_WARN_LENGTH = 8000
+/**
+ * Hard caps on untrusted input. A realistic board is ~1.5KB encoded, so 64KB is
+ * generous, and both limits together make a zip bomb (gzip reaches ~1000:1)
+ * unable to exhaust memory.
+ */
+const MAX_ENCODED_LENGTH = 64 * 1024
+const MAX_DECODED_BYTES = 4 * 1024 * 1024
 
 export interface SharePayload {
   /** Schema version, so a future format change can be detected not misread. */
@@ -44,16 +53,40 @@ async function gzip(str: string): Promise<Uint8Array> {
   return new Uint8Array(await new Response(cs.readable).arrayBuffer())
 }
 
-async function gunzip(bytes: Uint8Array): Promise<string> {
+/**
+ * Decompresses with a hard output cap, read chunk by chunk so a zip bomb is
+ * abandoned partway rather than being buffered whole and OOMing the tab.
+ */
+async function gunzip(bytes: Uint8Array, maxBytes: number): Promise<string> {
   const ds = new DecompressionStream('gzip')
   const writer = ds.writable.getWriter()
   // Copy into a fresh ArrayBuffer-backed view: the stream types require
   // ArrayBuffer specifically, not the wider ArrayBufferLike.
   const buf = new Uint8Array(bytes.length)
   buf.set(bytes)
-  writer.write(buf)
-  writer.close()
-  return new Response(ds.readable).text()
+  // Cancelling the reader below rejects these, which would surface as an
+  // unhandled rejection alongside the error we throw deliberately.
+  writer.write(buf).catch(() => {})
+  writer.close().catch(() => {})
+
+  const reader = ds.readable.getReader()
+  const chunks: Uint8Array[] = []
+  let total = 0
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    total += value.byteLength
+    if (total > maxBytes) {
+      await reader.cancel().catch(() => {})
+      throw new Error('This link is too large to open safely.')
+    }
+    chunks.push(value)
+  }
+
+  const joined = new Uint8Array(total)
+  let at = 0
+  for (const c of chunks) { joined.set(c, at); at += c.byteLength }
+  return new TextDecoder().decode(joined)
 }
 
 /**
@@ -70,13 +103,119 @@ export async function encodeShare(payload: SharePayload): Promise<string> {
   return toBase64Url(await gzip(JSON.stringify(payload)))
 }
 
+/** Node types the canvas can render. Anything else is dropped on import. */
+const KNOWN_NODE_TYPES = new Set(['contentType', 'image', 'sticky'])
+
+const isPlainObject = (v: unknown): v is Record<string, unknown> =>
+  typeof v === 'object' && v !== null && !Array.isArray(v)
+
+const num = (v: unknown, fallback: number) =>
+  typeof v === 'number' && Number.isFinite(v) ? v : fallback
+
+/**
+ * Rebuilds a node from untrusted input, keeping only known keys with checked
+ * types. Anything unrecognised is dropped rather than trusted, so a crafted
+ * link cannot introduce a field type or node shape the canvas can't render.
+ */
+function sanitizeNode(raw: unknown): Record<string, unknown> | null {
+  if (!isPlainObject(raw)) return null
+  const type = raw.type
+  if (typeof type !== 'string' || !KNOWN_NODE_TYPES.has(type)) return null
+  if (typeof raw.id !== 'string' || !raw.id) return null
+
+  const pos = isPlainObject(raw.position) ? raw.position : {}
+  const data = isPlainObject(raw.data) ? raw.data : {}
+
+  const node: Record<string, unknown> = {
+    id: raw.id,
+    type,
+    position: { x: num(pos.x, 0), y: num(pos.y, 0) },
+  }
+
+  if (type === 'contentType') {
+    const fields = Array.isArray(data.fields) ? data.fields : []
+    node.data = {
+      label: typeof data.label === 'string' ? data.label : 'Untitled',
+      kind: typeof data.kind === 'string' ? data.kind : undefined,
+      emoji: typeof data.emoji === 'string' ? [...data.emoji][0] : undefined,
+      fields: fields.flatMap((f) => {
+        if (!isPlainObject(f) || typeof f.id !== 'string') return []
+        return [{
+          id: f.id,
+          name: typeof f.name === 'string' ? f.name : 'field',
+          // Validated against the real ids, so an inherited property name
+          // like "constructor" can never reach the icon lookup
+          type: isFieldType(f.type) ? f.type : migrateFieldType(String(f.type ?? '')),
+          required: f.required === true,
+          isArray: f.isArray === true,
+          localized: f.localized === true,
+        }]
+      }),
+    }
+  } else if (type === 'sticky') {
+    node.width = num(raw.width, 200)
+    node.height = num(raw.height, 200)
+    node.data = {
+      text: typeof data.text === 'string' ? data.text : '',
+      color: typeof data.color === 'string' ? data.color : undefined,
+    }
+  } else {
+    // Image nodes are never shared, but tolerate one appearing: imageUrl is
+    // always re-read from IndexedDB by id, so no attacker value can reach an
+    // <img src>.
+    node.data = { label: typeof data.label === 'string' ? data.label : 'image' }
+  }
+
+  return node
+}
+
+function sanitizeEdge(raw: unknown, nodeIds: Set<string>): Record<string, unknown> | null {
+  if (!isPlainObject(raw)) return null
+  const { id, source, target, sourceHandle } = raw
+  if (typeof id !== 'string' || typeof source !== 'string' || typeof target !== 'string') return null
+  // Drop edges pointing at nodes that aren't in the payload
+  if (!nodeIds.has(source) || !nodeIds.has(target)) return null
+  return {
+    id,
+    source,
+    target,
+    sourceHandle: typeof sourceHandle === 'string' ? sourceHandle : null,
+    animated: false,
+    style: { stroke: '#0891B2', strokeWidth: 2 },
+  }
+}
+
 export async function decodeShare(encoded: string): Promise<SharePayload> {
-  const json = await gunzip(fromBase64Url(encoded))
-  const parsed = JSON.parse(json) as SharePayload
-  if (parsed?.v !== 1 || !Array.isArray(parsed.nodes)) {
+  // Cap the input before decompressing. gzip reaches ~1000:1, so an
+  // unbounded fragment could expand to gigabytes and kill the tab.
+  if (encoded.length > MAX_ENCODED_LENGTH) {
+    throw new Error('This link is too large to open safely.')
+  }
+
+  const json = await gunzip(fromBase64Url(encoded), MAX_DECODED_BYTES)
+  const parsed = JSON.parse(json) as unknown
+
+  if (!isPlainObject(parsed) || parsed.v !== 1 || !Array.isArray(parsed.nodes)) {
     throw new Error('This link was made by a different version of the app.')
   }
-  return parsed
+
+  const nodes = parsed.nodes.map(sanitizeNode).filter((n): n is Record<string, unknown> => !!n)
+  const nodeIds = new Set(nodes.map((n) => n.id as string))
+  const rawEdges = Array.isArray(parsed.edges) ? parsed.edges : []
+  const edges = rawEdges
+    .map((e) => sanitizeEdge(e, nodeIds))
+    .filter((e): e is Record<string, unknown> => !!e)
+
+  if (nodes.length === 0) {
+    throw new Error('This link doesn\u2019t contain a readable board.')
+  }
+
+  return {
+    v: 1,
+    name: typeof parsed.name === 'string' ? parsed.name.slice(0, 120) : 'Shared board',
+    nodes,
+    edges,
+  }
 }
 
 /** Reads and clears a shared board from the current URL, if there is one. */
