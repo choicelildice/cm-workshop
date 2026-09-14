@@ -326,6 +326,27 @@ export default function ContentTypeNode({ id, data: rawData }: NodeProps) {
   const kinds = data.kinds ?? []
   const { color: headerColor, text: headerText } = resolveTypeColors(data.kind, kinds)
   const kindLabel = resolveKindLabel(data.kind, kinds)
+
+  // Widen the card so the title fits rather than truncating. Measured from the
+  // rendered header text, since glyph widths vary too much for a per-character
+  // estimate to be reliable across names like "IIII" and "WWWW".
+  const titleRef = useRef<HTMLSpanElement>(null)
+  const [titleWidth, setTitleWidth] = useState(0)
+  useEffect(() => {
+    const el = titleRef.current
+    if (!el) return
+    // scrollWidth is the untruncated text width
+    setTitleWidth(el.scrollWidth)
+  }, [data.label, data.emoji, kindLabel])
+
+  const MIN_CARD_W = 200
+  const MAX_CARD_W = 420
+  // Header chrome: padding, emoji, kind tag, and the hover buttons' space
+  const HEADER_CHROME = 92
+  const cardWidth = Math.min(
+    MAX_CARD_W,
+    Math.max(MIN_CARD_W, titleWidth + HEADER_CHROME)
+  )
   const inputRef = useRef<HTMLInputElement>(null)
   const pendingInputRef = useRef<HTMLInputElement>(null)
 
@@ -375,7 +396,7 @@ export default function ContentTypeNode({ id, data: rawData }: NodeProps) {
     <div
       className="rounded-lg overflow-visible shadow-md border bg-white transition-colors"
       style={{
-        width: 200,
+        width: cardWidth,
         borderColor: dropTarget ? '#1773eb' : '#e5e7eb',
         boxShadow: dropTarget ? '0 0 0 2px #1773eb55' : undefined,
       }}
@@ -423,7 +444,11 @@ export default function ContentTypeNode({ id, data: rawData }: NodeProps) {
             }}
           />
         ) : (
-          <span className="flex-1 font-bold truncate text-xs" style={{ color: headerText }}>
+          <span
+            ref={titleRef}
+            className="flex-1 font-bold text-xs whitespace-nowrap overflow-hidden"
+            style={{ color: headerText }}
+          >
             {data.label}
           </span>
         )}

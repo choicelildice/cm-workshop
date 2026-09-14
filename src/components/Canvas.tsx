@@ -102,6 +102,8 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
   // True between the first drag frame and release, so a drag records one
   // history entry rather than one per animation frame.
   const draggingRef = useRef(false)
+  // Same, for resize gestures.
+  const resizingRef = useRef(false)
   // Image ids already written to IndexedDB. A node's imageUrl never changes
   // after creation, so each blob only ever needs to be stored once.
   const savedImagesRef = useRef<Set<string>>(new Set())
@@ -950,6 +952,21 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
       type PosChange = Extract<NodeChange<Node>, { type: 'position' }>
       const posChanges = changes.filter((c): c is PosChange => c.type === 'position')
       const drag = posChanges[0]
+
+      // Resizing emits a dimensions change per frame with resizing:true, so
+      // record once at the start of the gesture, as with dragging.
+      type DimChange = Extract<NodeChange<Node>, { type: 'dimensions' }>
+      const resize = changes.find(
+        (c): c is DimChange => c.type === 'dimensions' && !!(c as DimChange).resizing
+      )
+      if (resize) {
+        if (!resizingRef.current) {
+          resizingRef.current = true
+          pushHistoryRef.current()
+        }
+      } else if (resizingRef.current && changes.some((c) => c.type === 'dimensions')) {
+        resizingRef.current = false
+      }
 
       if (drag?.dragging && drag.position) {
         // One history entry per gesture: record on the first frame only.

@@ -1,12 +1,12 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { NodeProps } from '@xyflow/react'
+import { NodeProps, NodeResizer } from '@xyflow/react'
 import { Palette, Trash2 } from 'lucide-react'
 import { StickyNodeData } from '@/lib/types'
 import { STICKY_COLORS, DEFAULT_STICKY_COLOR } from '@/lib/sticky-colors'
 
-export default function StickyNode({ id, data: rawData }: NodeProps) {
+export default function StickyNode({ id, data: rawData, width, height, selected }: NodeProps) {
   const data = rawData as unknown as StickyNodeData
   const [hovered, setHovered] = useState(false)
   const [editing, setEditing] = useState(false)
@@ -36,10 +36,12 @@ export default function StickyNode({ id, data: rawData }: NodeProps) {
 
   return (
     <div
-      className="relative shadow-md"
+      className="relative shadow-md flex"
       style={{
-        width: 200,
-        minHeight: 200,
+        // Falls back to the default square until a resize sets explicit
+        // dimensions on the node.
+        width: width ?? 200,
+        height: height ?? 200,
         backgroundColor: swatch.value,
         // Sticky notes read as paper: square corners, no border
         borderRadius: 2,
@@ -48,11 +50,20 @@ export default function StickyNode({ id, data: rawData }: NodeProps) {
       onMouseLeave={() => { setHovered(false); setColorOpen(false) }}
       onDoubleClick={() => setEditing(true)}
     >
+      <NodeResizer
+        nodeId={id}
+        isVisible={!!selected}
+        minWidth={120}
+        minHeight={120}
+        color="#1773eb"
+        handleStyle={{ width: 8, height: 8, borderRadius: 2 }}
+      />
+
       {editing ? (
         <textarea
           ref={areaRef}
-          className="nodrag nowheel w-full h-full bg-transparent outline-none resize-none p-3 text-sm leading-snug"
-          style={{ color: swatch.text, minHeight: 200 }}
+          className="nodrag nowheel flex-1 bg-transparent outline-none resize-none p-3 text-sm leading-snug"
+          style={{ color: swatch.text }}
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onBlur={commit}
@@ -67,8 +78,8 @@ export default function StickyNode({ id, data: rawData }: NodeProps) {
         />
       ) : (
         <div
-          className="p-3 text-sm leading-snug whitespace-pre-wrap break-words"
-          style={{ color: swatch.text, minHeight: 200 }}
+          className="flex-1 p-3 text-sm leading-snug whitespace-pre-wrap break-words overflow-hidden"
+          style={{ color: swatch.text }}
         >
           {data.text || (
             <span className="opacity-40 italic">Double-click to edit</span>
