@@ -282,6 +282,28 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
     [setNodes, mark]
   )
 
+  // Patch one field in place. Takes a partial so a single checkbox toggle
+  // doesn't have to restate the whole field.
+  const handleUpdateField = useCallback(
+    (nodeId: string, fieldId: string, patch: Partial<Omit<ContentField, 'id'>>) => {
+      mark()
+      setNodes((nds) =>
+        nds.map((n) => {
+          if (n.id !== nodeId) return n
+          const data = n.data as unknown as ContentTypeNodeData
+          return {
+            ...n,
+            data: {
+              ...data,
+              fields: data.fields.map((f) => (f.id === fieldId ? { ...f, ...patch } : f)),
+            } as unknown as Record<string, unknown>,
+          }
+        })
+      )
+    },
+    [setNodes, mark]
+  )
+
   // Move a field to a new index within its own content type
   const handleReorderField = useCallback(
     (nodeId: string, fieldId: string, toIndex: number) => {
@@ -320,12 +342,13 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
       onPasteField: handlePasteField,
       onDropField: handleDropField,
       onReorderField: handleReorderField,
+      onUpdateField: handleUpdateField,
       onRenameType: handleRenameType,
       onSetTypeKind: handleSetTypeKind,
       onSetTypeEmoji: handleSetTypeEmoji,
       onDeleteType: handleDeleteType,
     }),
-    [clipboard, kinds, handleAddField, handleDeleteField, handleCopyField, handlePasteField, handleDropField, handleReorderField, handleRenameType, handleSetTypeKind, handleSetTypeEmoji, handleDeleteType]
+    [clipboard, kinds, handleAddField, handleDeleteField, handleCopyField, handlePasteField, handleDropField, handleReorderField, handleUpdateField, handleRenameType, handleSetTypeKind, handleSetTypeEmoji, handleDeleteType]
   )
 
   // Sync clipboard state to all existing CT nodes
@@ -633,9 +656,19 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
     (ns: Node[]) =>
       ns.map((n) => {
         if (n.type === 'contentType') {
-          const { onAddField, onDeleteField, onCopyField, onPasteField, onDropField, onReorderField, onRenameType, onDeleteType, hasClipboard, ...rest } =
-            n.data as unknown as ContentTypeNodeData
-          void onAddField; void onDeleteField; void onCopyField; void onPasteField; void onDropField; void onReorderField; void onRenameType; void onDeleteType; void hasClipboard
+          // Everything callback-shaped is dropped, plus two pieces of derived
+          // state: `hasClipboard` is transient, and `kinds` is global config
+          // re-injected on load — persisting it would copy the whole kinds
+          // array into every single node.
+          const {
+            onAddField, onDeleteField, onCopyField, onPasteField, onDropField,
+            onReorderField, onUpdateField, onRenameType, onSetTypeKind,
+            onSetTypeEmoji, onDeleteType, hasClipboard, kinds: _kinds, ...rest
+          } = n.data as unknown as ContentTypeNodeData
+          void onAddField; void onDeleteField; void onCopyField; void onPasteField
+          void onDropField; void onReorderField; void onUpdateField; void onRenameType
+          void onSetTypeKind; void onSetTypeEmoji; void onDeleteType
+          void hasClipboard; void _kinds
           return { ...n, data: rest }
         }
         if (n.type === 'image') {

@@ -6,6 +6,7 @@ import { Trash2, X, Copy, Clipboard, ArrowRight, Check, Palette, Pencil, Smile }
 import { ContentTypeNodeData, ContentField, FieldType } from '@/lib/types'
 import {
   FIELD_TYPES,
+  FIELD_TYPE_OPTIONS,
   COMMON_EMOJI,
   resolveTypeColors,
   resolveKindLabel,
@@ -23,6 +24,7 @@ function FieldRow({
   onDelete,
   onCopy,
   onReorder,
+  onUpdate,
 }: {
   field: ContentField
   nodeId: string
@@ -30,9 +32,14 @@ function FieldRow({
   onDelete: (nodeId: string, fieldId: string) => void
   onCopy: (field: ContentField) => void
   onReorder: (nodeId: string, fieldId: string, toIndex: number) => void
+  onUpdate: (nodeId: string, fieldId: string, patch: Partial<Omit<ContentField, 'id'>>) => void
 }) {
   const [hovered, setHovered] = useState(false)
   const [dragging, setDragging] = useState(false)
+  const [editing, setEditing] = useState(false)
+  const [typeOpen, setTypeOpen] = useState(false)
+  const [draft, setDraft] = useState(field.name)
+  const editRef = useRef<HTMLInputElement>(null)
   const [insertAt, setInsertAt] = useState<'above' | 'below' | null>(null)
   // On dragstart, e.target is the draggable row itself rather than the element
   // actually under the pointer, so whether the gesture began on the connection
@@ -83,6 +90,127 @@ function FieldRow({
     onReorder(nodeId, src.fieldId, below ? index + 1 : index)
   }
 
+  useEffect(() => { setDraft(field.name) }, [field.name])
+  useEffect(() => {
+    if (editing) {
+      editRef.current?.focus()
+      editRef.current?.select()
+    }
+  }, [editing])
+
+  function commitName() {
+    const trimmed = draft.trim()
+    // An empty name would leave the row unreadable, so revert instead
+    if (!trimmed) { setDraft(field.name); return }
+    if (trimmed !== field.name) onUpdate(nodeId, field.id, { name: trimmed })
+  }
+
+  function closeEditor() {
+    commitName()
+    setEditing(false)
+    setTypeOpen(false)
+  }
+
+  // ── Editing view ───────────────────────────────────────────────────
+  if (editing) {
+    const EditIcon = FIELD_TYPES[field.type].Icon
+    return (
+      <div className="nodrag px-2 py-1.5 bg-blue-50 border-y border-blue-100 relative">
+        <div className="flex items-center gap-1.5 mb-1.5">
+          <button
+            className="nodrag flex-shrink-0 inline-flex items-center justify-center rounded text-white"
+            style={{ backgroundColor: FIELD_TYPES[field.type].color, width: 24, height: 22 }}
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => { e.stopPropagation(); setTypeOpen((v) => !v) }}
+            title="Change field type"
+          >
+            <EditIcon size={ICON_SIZE.small} weight={ICON_WEIGHT} />
+          </button>
+          <input
+            ref={editRef}
+            className="nodrag flex-1 text-xs border border-blue-300 rounded px-1.5 py-0.5 outline-none focus:border-blue-500 bg-white min-w-0"
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') closeEditor()
+              if (e.key === 'Escape') { setDraft(field.name); setEditing(false); setTypeOpen(false) }
+            }}
+          />
+        </div>
+
+        {typeOpen && (
+          <div
+            className="nodrag absolute left-2 top-9 z-50 bg-white border border-gray-200 rounded-lg shadow-xl py-1 max-h-52 overflow-y-auto"
+            style={{ width: 168 }}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            {FIELD_TYPE_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-left hover:bg-gray-50 transition-colors"
+                onClick={() => { onUpdate(nodeId, field.id, { type: opt.value }); setTypeOpen(false) }}
+              >
+                <span
+                  className="flex-shrink-0 inline-flex items-center justify-center rounded text-white"
+                  style={{ backgroundColor: opt.color, width: 22, height: 20 }}
+                >
+                  <opt.Icon size={ICON_SIZE.tiny} weight={ICON_WEIGHT} />
+                </span>
+                <span className="flex-1 text-gray-800">{opt.label}</span>
+                {opt.value === field.type && <Check size={11} className="text-blue-600 flex-shrink-0" />}
+              </button>
+            ))}
+          </div>
+        )}
+
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <label className="nodrag flex items-center gap-1 text-[11px] text-gray-600 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={field.required}
+                onChange={(e) => onUpdate(nodeId, field.id, { required: e.target.checked })}
+                className="nodrag w-3 h-3 accent-blue-600"
+              />
+              Required
+            </label>
+            <label
+              className="nodrag flex items-center gap-1 text-[11px] text-gray-600 cursor-pointer select-none"
+              title="Separate value per locale"
+            >
+              <input
+                type="checkbox"
+                checked={!!field.localized}
+                onChange={(e) => onUpdate(nodeId, field.id, { localized: e.target.checked })}
+                className="nodrag w-3 h-3 accent-blue-600"
+              />
+              Localized
+            </label>
+            <label
+              className="nodrag flex items-center gap-1 text-[11px] text-gray-600 cursor-pointer select-none"
+              title="A list of values"
+            >
+              <input
+                type="checkbox"
+                checked={field.isArray}
+                onChange={(e) => onUpdate(nodeId, field.id, { isArray: e.target.checked })}
+                className="nodrag w-3 h-3 accent-blue-600"
+              />
+              List
+            </label>
+          </div>
+          <button
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => { e.stopPropagation(); closeEditor() }}
+            className="nodrag text-[11px] px-2 py-0.5 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors flex items-center gap-0.5"
+          >
+            <Check size={9} /> Done
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div
       className="nodrag relative flex items-center gap-2 px-2 py-1 group"
@@ -95,6 +223,7 @@ function FieldRow({
       onDrop={handleDrop}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
+      onDoubleClick={(e) => { e.stopPropagation(); setEditing(true) }}
       style={{ opacity: dragging ? 0.4 : 1, cursor: 'grab' }}
     >
       {insertAt && (
@@ -130,6 +259,15 @@ function FieldRow({
         <span className="flex items-center gap-0.5 flex-shrink-0">
           <button
             className="nodrag text-gray-400 hover:text-blue-500 transition-colors p-0.5"
+            onMouseDown={(e) => e.stopPropagation()}
+            onDoubleClick={(e) => e.stopPropagation()}
+            onClick={(e) => { e.stopPropagation(); setEditing(true) }}
+            title="Edit field"
+          >
+            <Pencil size={10} />
+          </button>
+          <button
+            className="nodrag text-gray-400 hover:text-blue-500 transition-colors p-0.5"
             onClick={() => onCopy(field)}
             title="Copy field"
           >
@@ -149,6 +287,7 @@ function FieldRow({
         <span
           data-connect-zone
           draggable={false}
+          onDoubleClick={(e) => e.stopPropagation()}
           className="flex-shrink-0 flex items-center gap-0.5"
           title="Drag to connect to another content type"
           style={{ cursor: 'crosshair' }}
@@ -453,6 +592,7 @@ export default function ContentTypeNode({ id, data: rawData }: NodeProps) {
             onDelete={data.onDeleteField}
             onCopy={data.onCopyField}
             onReorder={data.onReorderField}
+            onUpdate={data.onUpdateField}
           />
         ))}
         {pending && (

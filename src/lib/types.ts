@@ -43,6 +43,7 @@ export interface ContentTypeNodeData {
   onPasteField: (nodeId: string) => void
   onDropField: (nodeId: string, field: Omit<ContentField, 'id'>) => void
   onReorderField: (nodeId: string, fieldId: string, toIndex: number) => void
+  onUpdateField: (nodeId: string, fieldId: string, patch: Partial<Omit<ContentField, 'id'>>) => void
   onRenameType: (nodeId: string, newName: string) => void
   onSetTypeKind: (nodeId: string, kind?: ContentTypeKind) => void
   onSetTypeEmoji: (nodeId: string, emoji?: string) => void
