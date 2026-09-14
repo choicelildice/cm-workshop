@@ -49,6 +49,10 @@ IndexedDB, everything else in `localStorage`.
 placement previews that follow the cursor, image paste and upload, and undo/redo
 with Cmd+Z.
 
+**Intro tour.** A guided walkthrough runs on first visit and covers the
+interactions you can't see just by looking: click-to-place, drag-to-reorder,
+double-click-to-edit. Reopen it any time from the Help button.
+
 ## Running it
 
 ```bash

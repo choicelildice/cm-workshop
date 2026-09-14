@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import dynamic from 'next/dynamic'
-import { ImageIcon, PlusSquare, ExternalLink, Trash2, Settings, UploadCloud, DownloadCloud, StickyNote } from 'lucide-react'
+import { ImageIcon, PlusSquare, ExternalLink, Trash2, Settings, UploadCloud, DownloadCloud, StickyNote, HelpCircle } from 'lucide-react'
 import FieldLibrary from '@/components/FieldLibrary'
 import MiroExportModal from '@/components/MiroExportModal'
 import ContentfulExportModal from '@/components/ContentfulExportModal'
@@ -11,6 +11,8 @@ import ProjectMenu from '@/components/ProjectMenu'
 import KindSettingsModal from '@/components/KindSettingsModal'
 import { ensureCurrentProject, setCurrentProjectId } from '@/lib/projects'
 import { loadKinds } from '@/lib/kind-config'
+import { hasSeenTour } from '@/lib/tour'
+import TourGuide from '@/components/TourGuide'
 import { DEFAULT_KINDS, type KindDef } from '@/lib/field-type-meta'
 
 const Canvas = dynamic(() => import('@/components/Canvas'), { ssr: false })
@@ -37,6 +39,7 @@ export default function WorkshopApp() {
   const [showMiroExport, setShowMiroExport] = useState(false)
   const [showCfExport, setShowCfExport] = useState(false)
   const [showCfImport, setShowCfImport] = useState(false)
+  const [showTour, setShowTour] = useState(false)
   // Resolved on the client only — localStorage isn't available during SSR
   const [projectId, setProjectId] = useState<string | null>(null)
   const [kinds, setKinds] = useState<KindDef[]>(DEFAULT_KINDS)
@@ -45,6 +48,8 @@ export default function WorkshopApp() {
   useEffect(() => {
     setProjectId(ensureCurrentProject())
     setKinds(loadKinds())
+    // First visit only; the Help button reopens it afterwards
+    if (!hasSeenTour()) setShowTour(true)
   }, [])
 
   const switchProject = useCallback((id: string) => {
@@ -119,7 +124,7 @@ export default function WorkshopApp() {
         <div className="w-px h-5 bg-gray-200 mx-1" />
 
         {/* Add Content Type */}
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5" data-tour="add-type">
           <PlusSquare size={14} className="text-gray-400 flex-shrink-0" />
           <input
             type="text"
@@ -148,6 +153,7 @@ export default function WorkshopApp() {
 
         {/* Sticky note */}
         <button
+          data-tour="sticky"
           className="flex items-center gap-1.5 text-base font-semibold text-gray-800 hover:text-blue-700 hover:bg-blue-50 px-3 py-1.5 rounded-lg transition-colors border border-gray-300 hover:border-blue-300"
           onClick={() => actionsRef.current?.addSticky()}
         >
@@ -202,8 +208,19 @@ export default function WorkshopApp() {
           </button>
         )}
 
+        {/* Tour */}
+        <button
+          className="flex items-center gap-1.5 text-base font-medium text-gray-600 hover:text-blue-700 hover:bg-blue-50 px-3 py-1.5 rounded-lg transition-colors"
+          onClick={() => setShowTour(true)}
+          title="Show the intro tour"
+        >
+          <HelpCircle size={14} />
+          Help
+        </button>
+
         {/* Kind settings */}
         <button
+          data-tour="kinds"
           className="flex items-center gap-1.5 text-base font-medium text-gray-600 hover:text-blue-700 hover:bg-blue-50 px-3 py-1.5 rounded-lg transition-colors"
           onClick={() => setShowKindSettings(true)}
           title="Configure content type kinds"
@@ -214,6 +231,7 @@ export default function WorkshopApp() {
 
         {/* Import from Contentful */}
         <button
+          data-tour="import"
           className="flex items-center gap-1.5 text-base font-medium text-gray-800 hover:text-blue-700 hover:bg-blue-50 px-3 py-1.5 rounded-lg transition-colors border border-gray-300 hover:border-blue-300"
           onClick={() => setShowCfImport(true)}
         >
@@ -223,6 +241,7 @@ export default function WorkshopApp() {
 
         {/* Export to Contentful */}
         <button
+          data-tour="export"
           className="flex items-center gap-1.5 text-base font-semibold text-white px-3 py-1.5 rounded-lg transition-opacity hover:opacity-90"
           style={{ backgroundColor: '#1773eb' }}
           onClick={() => setShowCfExport(true)}
@@ -240,6 +259,8 @@ export default function WorkshopApp() {
           Export to Miro
         </button>
       </div>
+
+      {showTour && <TourGuide onClose={() => setShowTour(false)} />}
 
       {showKindSettings && (
         <KindSettingsModal
@@ -273,8 +294,10 @@ export default function WorkshopApp() {
 
       {/* Main area: sidebar + canvas */}
       <div className="flex-1 flex overflow-hidden">
-        <FieldLibrary />
-        <div className="flex-1 overflow-hidden">
+        <div data-tour="field-library" className="flex-shrink-0">
+          <FieldLibrary />
+        </div>
+        <div className="flex-1 overflow-hidden" data-tour="canvas">
           {projectId && <Canvas projectId={projectId} kinds={kinds} onReady={handleCanvasReady} />}
         </div>
       </div>
