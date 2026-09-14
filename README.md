@@ -42,6 +42,12 @@ written.
 **Export to Miro.** Renders the model onto a board, one shape per content type
 inside a frame, sized to match content already there.
 
+**Share a link.** The Share button packs the whole model into the URL fragment,
+so anyone with the link can open a copy without an account or a backend. A
+realistic twelve-type board comes out around 1.5KB of URL. Because it lives in
+the fragment, board data is never sent to the server. Links are snapshots rather
+than live boards, and images are left out (too large for a URL).
+
 **Projects.** Multiple named boards, autosaved locally. Images are stored in
 IndexedDB, everything else in `localStorage`.
 

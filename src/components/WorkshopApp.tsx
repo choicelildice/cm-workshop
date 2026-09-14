@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import dynamic from 'next/dynamic'
-import { ImageIcon, PlusSquare, ExternalLink, Trash2, Settings, UploadCloud, DownloadCloud, StickyNote, HelpCircle } from 'lucide-react'
+import { ImageIcon, PlusSquare, ExternalLink, Trash2, Settings, UploadCloud, DownloadCloud, StickyNote, HelpCircle, Share2 } from 'lucide-react'
 import FieldLibrary from '@/components/FieldLibrary'
 import MiroExportModal from '@/components/MiroExportModal'
 import ContentfulExportModal from '@/components/ContentfulExportModal'
@@ -12,6 +12,10 @@ import KindSettingsModal from '@/components/KindSettingsModal'
 import { ensureCurrentProject, setCurrentProjectId } from '@/lib/projects'
 import { loadKinds } from '@/lib/kind-config'
 import { hasSeenTour } from '@/lib/tour'
+import ShareModal from '@/components/ShareModal'
+import ShareOpenPrompt from '@/components/ShareOpenPrompt'
+import { clearShareFromUrl, decodeShare, readShareFromUrl, type SharePayload } from '@/lib/share'
+import { createProjectFromShare } from '@/lib/projects'
 import TourGuide from '@/components/TourGuide'
 import { DEFAULT_KINDS, type KindDef } from '@/lib/field-type-meta'
 
@@ -40,6 +44,8 @@ export default function WorkshopApp() {
   const [showCfExport, setShowCfExport] = useState(false)
   const [showCfImport, setShowCfImport] = useState(false)
   const [showTour, setShowTour] = useState(false)
+  const [showShare, setShowShare] = useState(false)
+  const [incoming, setIncoming] = useState<SharePayload | null>(null)
   // Resolved on the client only — localStorage isn't available during SSR
   const [projectId, setProjectId] = useState<string | null>(null)
   const [kinds, setKinds] = useState<KindDef[]>(DEFAULT_KINDS)
@@ -48,13 +54,42 @@ export default function WorkshopApp() {
   useEffect(() => {
     setProjectId(ensureCurrentProject())
     setKinds(loadKinds())
+
+    // A share link takes precedence over the tour, so the two never stack
+    const encoded = readShareFromUrl()
+    if (encoded) {
+      decodeShare(encoded)
+        .then(setIncoming)
+        .catch(() => {
+          // A corrupt or truncated link shouldn't leave a dead fragment behind
+          clearShareFromUrl()
+        })
+      return
+    }
     // First visit only; the Help button reopens it afterwards
     if (!hasSeenTour()) setShowTour(true)
   }, [])
 
+
   const switchProject = useCallback((id: string) => {
     setCurrentProjectId(id)
     setProjectId(id)
+  }, [])
+
+  const acceptShare = useCallback(() => {
+    if (!incoming) return
+    const meta = createProjectFromShare(incoming.name, {
+      nodes: incoming.nodes,
+      edges: incoming.edges,
+    })
+    clearShareFromUrl()
+    setIncoming(null)
+    switchProject(meta.id)
+  }, [incoming, switchProject])
+
+  const dismissShare = useCallback(() => {
+    clearShareFromUrl()
+    setIncoming(null)
   }, [])
 
   // Catch the OAuth callback token and open the export modal
@@ -208,6 +243,16 @@ export default function WorkshopApp() {
           </button>
         )}
 
+        {/* Share */}
+        <button
+          className="flex items-center gap-1.5 text-base font-medium text-gray-600 hover:text-blue-700 hover:bg-blue-50 px-3 py-1.5 rounded-lg transition-colors"
+          onClick={() => setShowShare(true)}
+          title="Share this board via a link"
+        >
+          <Share2 size={14} />
+          Share
+        </button>
+
         {/* Tour */}
         <button
           className="flex items-center gap-1.5 text-base font-medium text-gray-600 hover:text-blue-700 hover:bg-blue-50 px-3 py-1.5 rounded-lg transition-colors"
@@ -259,6 +304,20 @@ export default function WorkshopApp() {
           Export to Miro
         </button>
       </div>
+
+      {incoming && (
+        <ShareOpenPrompt
+          name={incoming.name}
+          typeCount={incoming.nodes.filter((n) => (n as { type?: string }).type === 'contentType').length}
+          stickyCount={incoming.nodes.filter((n) => (n as { type?: string }).type === 'sticky').length}
+          onOpen={acceptShare}
+          onDismiss={dismissShare}
+        />
+      )}
+
+      {showShare && projectId && (
+        <ShareModal projectId={projectId} onClose={() => setShowShare(false)} />
+      )}
 
       {showTour && <TourGuide onClose={() => setShowTour(false)} />}
 

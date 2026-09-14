@@ -106,6 +106,24 @@ export function duplicateProject(id: string, name: string): ProjectMeta | null {
   return meta
 }
 
+/**
+ * Creates a NEW project from shared data. Never overwrites an existing one:
+ * opening a share link must not be able to destroy the recipient's work, so a
+ * name collision gets a suffix rather than replacing anything.
+ */
+export function createProjectFromShare(name: string, data: ProjectData): ProjectMeta {
+  const existing = listProjects()
+  let finalName = name.trim() || 'Shared board'
+  if (existing.some((p) => p.name === finalName)) {
+    let i = 2
+    while (existing.some((p) => p.name === `${finalName} (${i})`)) i++
+    finalName = `${finalName} (${i})`
+  }
+  const meta = createProject(finalName)
+  write(dataKey(meta.id), data)
+  return meta
+}
+
 export function getCurrentProjectId(): string | null {
   if (!available()) return null
   try {
