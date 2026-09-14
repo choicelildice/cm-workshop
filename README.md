@@ -68,32 +68,53 @@ npm run dev
 
 Then open the dev server URL it prints.
 
-## Password protection
+## Access codes
 
-Set `APP_PASSWORD` and the whole app sits behind a password. Leave it unset and
-the app is open, which is the right default for local use.
+Set `APP_PASSWORD` and the app sits behind a code. Leave it unset locally and the
+app is open, which is the right default for development.
+
+A single shared code:
 
 ```bash
 # .env.local (gitignored)
-APP_PASSWORD=your-password
+APP_PASSWORD=x7Kp2mQ9vLd4Rt8w
 ```
 
-On Vercel, add `APP_PASSWORD` under Project → Settings → Environment Variables
-and redeploy. Vercel's own Password Protection is a Pro feature; this works on
-the free Hobby plan.
+Or one code per audience, so each customer or team can be revoked
+independently:
 
-**Use a long random value, not a word.** The session cookie is an HMAC keyed by
-the password, which resists inversion but not guessing: anyone holding a cookie
-can dictionary-attack it offline. There is also no rate limiting on the login.
+```bash
+APP_PASSWORD=acme:x7Kp2m…,globex:9Fq4tR…,internal:aB8sN…
+```
 
-In production the app **refuses to start** without `APP_PASSWORD`, so a missing
+The label before the colon is not secret. It identifies who a code was issued
+to: deleting one entry and redeploying invalidates that audience's sessions and
+leaves everyone else signed in. One deployment can therefore serve several
+customers without them sharing a code.
+
+Generate codes with something like `openssl rand -base64 18`, and store them
+somewhere you can read them back — hosting providers hide environment variable
+values once saved.
+
+Optionally set `SESSION_SECRET` as well. Session cookies are signed with it
+instead of with the access codes, which means a captured cookie cannot be
+attacked offline to recover a code, and rotating a code does not invalidate
+unrelated sessions. Without it the codes are used for signing, which still
+works.
+
+On Vercel, add these under Project → Settings → Environment Variables and
+redeploy. Vercel's own Password Protection is a Pro feature; this works on the
+free Hobby plan.
+
+**In production the app refuses to start without `APP_PASSWORD`**, so a missing
 or misspelled variable cannot silently expose it. Set `ALLOW_NO_PASSWORD=1` to
 run publicly without a gate on purpose.
 
-The check runs on the server: the page is never sent to the browser without a
-valid session cookie, and the API routes reject unauthenticated calls
-independently, so the gate can't be bypassed by calling them directly. The
-browser only ever holds an HMAC of the password, never the password itself.
+The gate is enforced on the server: the page is never sent to the browser
+without a valid session cookie, and the API routes reject unauthenticated calls
+independently, so it cannot be bypassed by calling them directly. Cookies carry
+a server-enforced expiry, and repeated failed logins from one address are
+throttled.
 
 ## Credentials
 

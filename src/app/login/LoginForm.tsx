@@ -21,10 +21,18 @@ function SubmitButton() {
 export default function LoginForm({
   action,
   failed,
+  throttled,
+  waitSeconds,
 }: {
   action: (formData: FormData) => void
   failed: boolean
+  throttled?: boolean
+  waitSeconds?: number
 }) {
+  const waitLabel =
+    waitSeconds && waitSeconds > 60
+      ? `${Math.ceil(waitSeconds / 60)} minutes`
+      : `${waitSeconds ?? 0} seconds`
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
       <div className="w-full max-w-sm">
@@ -44,7 +52,7 @@ export default function LoginForm({
         >
           <div className="flex items-center gap-2 mb-4 text-gray-500">
             <Lock size={13} />
-            <span className="text-xs font-medium">This workshop is password protected</span>
+            <span className="text-xs font-medium">Enter your access code to continue</span>
           </div>
 
           <input
@@ -52,13 +60,20 @@ export default function LoginForm({
             type="password"
             autoFocus
             autoComplete="current-password"
-            placeholder="Password"
-            className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 text-gray-900 mb-3"
+            placeholder="Access code"
+            disabled={throttled}
+            className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 text-gray-900 mb-3 disabled:bg-gray-50"
           />
 
           {failed && (
             <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-3">
-              Incorrect password.
+              That code isn&rsquo;t right.
+            </p>
+          )}
+
+          {throttled && (
+            <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3">
+              Too many attempts. Try again in about {waitLabel}.
             </p>
           )}
 
