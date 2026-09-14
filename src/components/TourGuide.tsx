@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useLayoutEffect, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { ArrowLeft, ArrowRight, X } from 'lucide-react'
 import { TOUR_STEPS, markTourSeen } from '@/lib/tour'
 
@@ -17,6 +17,8 @@ const PAD = 6
 export default function TourGuide({ onClose }: Props) {
   const [i, setI] = useState(0)
   const [box, setBox] = useState<Box | null>(null)
+  const [cardH, setCardH] = useState(0)
+  const cardRef = useRef<HTMLDivElement>(null)
 
   const step = TOUR_STEPS[i]
   const isLast = i === TOUR_STEPS.length - 1
@@ -53,6 +55,12 @@ export default function TourGuide({ onClose }: Props) {
     }
   }, [step.target, i])
 
+  // Card height drives both clamps, and changes per step as the body text
+  // length changes, so re-measure whenever the step does.
+  useLayoutEffect(() => {
+    if (cardRef.current) setCardH(cardRef.current.offsetHeight)
+  }, [i])
+
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key === 'Escape') finish()
@@ -67,31 +75,50 @@ export default function TourGuide({ onClose }: Props) {
     return () => window.removeEventListener('keydown', onKey)
   }, [isLast, finish])
 
-  // Card position, clamped to stay on screen at any window size
+  /**
+   * Card position in absolute coordinates, clamped to the viewport.
+   *
+   * Both axes are clamped against the card's *measured* height. An earlier
+   * version guessed 200px and skipped the vertical clamp for top-placed cards,
+   * which pushed the card off-screen for tall targets like the full-height
+   * field library sidebar.
+   */
   function cardStyle(): React.CSSProperties {
+    const h = cardH || 200
     if (!box) {
       return {
-        top: '50%',
-        left: '50%',
-        transform: 'translate(-50%, -50%)',
+        top: Math.max(GAP, (window.innerHeight - h) / 2),
+        left: Math.max(GAP, (window.innerWidth - CARD_W) / 2),
         width: CARD_W,
       }
     }
+
     const place = step.placement ?? 'bottom'
-    let top = box.top + box.height + GAP
+    let top: number
     let left = box.left
 
-    if (place === 'top') top = box.top - GAP
-    if (place === 'right') { top = box.top; left = box.left + box.width + GAP }
-    if (place === 'left') { top = box.top; left = box.left - CARD_W - GAP }
-
-    // Keep the card inside the viewport
-    left = Math.max(GAP, Math.min(left, window.innerWidth - CARD_W - GAP))
-    const maxTop = window.innerHeight - 200
-    if (place === 'top') {
-      return { top: Math.max(GAP, top), left, width: CARD_W, transform: 'translateY(-100%)' }
+    if (place === 'right' || place === 'left') {
+      // Centre on the target rather than aligning to its top: a sidebar spans
+      // the viewport, so its top edge is a poor anchor.
+      top = box.top + box.height / 2 - h / 2
+      left = place === 'right' ? box.left + box.width + GAP : box.left - CARD_W - GAP
+    } else if (place === 'top') {
+      top = box.top - GAP - h
+    } else {
+      top = box.top + box.height + GAP
     }
-    return { top: Math.max(GAP, Math.min(top, maxTop)), left, width: CARD_W }
+
+    // If a bottom-placed card would overflow, flip it above the target
+    if (place === 'bottom' && top + h + GAP > window.innerHeight) {
+      const above = box.top - GAP - h
+      if (above >= GAP) top = above
+    }
+
+    return {
+      top: Math.max(GAP, Math.min(top, window.innerHeight - h - GAP)),
+      left: Math.max(GAP, Math.min(left, window.innerWidth - CARD_W - GAP)),
+      width: CARD_W,
+    }
   }
 
   return (
@@ -139,6 +166,7 @@ export default function TourGuide({ onClose }: Props) {
 
       {/* Card */}
       <div
+        ref={cardRef}
         className="fixed bg-white rounded-xl shadow-2xl p-4"
         style={{ ...cardStyle(), pointerEvents: 'auto' }}
       >
