@@ -18,6 +18,7 @@ interface PlanField {
   name: string
   type: string
   required: boolean
+  localized?: boolean
   linkedTo?: string[]
 }
 
@@ -185,6 +186,9 @@ export default function ContentfulExportModal({ getExportData, onClose }: Props)
                         <code className="text-gray-700 w-32 truncate">{f.id}</code>
                         <span className="text-gray-400 font-mono text-[11px]">{f.type}</span>
                         {f.required && <span className="text-red-500">*</span>}
+                        {f.localized && (
+                          <span className="text-[10px] text-slate-600 bg-slate-100 px-1 rounded">i18n</span>
+                        )}
                         {f.id === p.displayField && (
                           <span className="text-[10px] text-blue-600 bg-blue-50 px-1 rounded">title</span>
                         )}

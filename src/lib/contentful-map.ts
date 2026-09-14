@@ -58,9 +58,10 @@ export const DISPLAY_FIELD_TYPES = new Set(['Symbol'])
 export function fromCmaField(f: {
   type: string
   linkType?: string
+  localized?: boolean
   items?: { type?: string; linkType?: string; validations?: unknown[] }
   validations?: unknown[]
-}): { fieldType: FieldType; isArray: boolean; linkTargets: string[] } {
+}): { fieldType: FieldType; isArray: boolean; localized: boolean; linkTargets: string[] } {
   const isArray = f.type === 'Array'
   const type = isArray ? (f.items?.type ?? 'Symbol') : f.type
   const linkType = isArray ? f.items?.linkType : f.linkType
@@ -105,7 +106,7 @@ export function fromCmaField(f: {
       fieldType = 'text'
   }
 
-  return { fieldType, isArray, linkTargets }
+  return { fieldType, isArray, localized: !!f.localized, linkTargets }
 }
 
 /**
@@ -151,9 +152,10 @@ export function toCmaField(opts: {
   fieldType: FieldType
   required: boolean
   isArray: boolean
+  localized?: boolean
   linkTargets?: string[]
 }): CmaField {
-  const { id, name, fieldType, required, isArray, linkTargets = [] } = opts
+  const { id, name, fieldType, required, isArray, localized = false, linkTargets = [] } = opts
   const m = MAP[fieldType]
 
   const linkValidations =
@@ -169,7 +171,7 @@ export function toCmaField(opts: {
       name,
       type: 'Array',
       required,
-      localized: false,
+      localized,
       items: {
         type: m.arrayItemType,
         ...(m.arrayItemLinkType ? { linkType: m.arrayItemLinkType } : {}),
@@ -183,7 +185,7 @@ export function toCmaField(opts: {
     name,
     type: m.type,
     required,
-    localized: false,
+    localized,
     ...(m.linkType ? { linkType: m.linkType } : {}),
     ...(linkValidations ? { validations: linkValidations } : {}),
   }

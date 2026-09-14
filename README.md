@@ -12,8 +12,13 @@ be re-typed by hand afterwards.
 ## What it does
 
 **Model on a canvas.** Add content types, drag field types onto them from the
-library, name each field inline and mark it required. Reorder fields by dragging.
-Drag from a reference field to another type to draw the relationship.
+library, name each field inline and mark it required or localized. Reorder fields
+by dragging. Drag from a reference field to another type to draw the
+relationship.
+
+**Sticky notes.** Drop notes on the board for open questions and decisions, in
+eight colours. They travel to Miro as real sticky notes and are ignored by the
+Contentful export.
 
 **Field types mirror Contentful.** The library holds exactly the nine types
 Contentful's "Add new field" dialog offers, using the same Phosphor icons the web
@@ -41,7 +46,8 @@ inside a frame, sized to match content already there.
 IndexedDB, everything else in `localStorage`.
 
 **Canvas niceties.** Miro-style alignment guides, pinch and keyboard zoom,
-placement previews that follow the cursor, image paste and upload.
+placement previews that follow the cursor, image paste and upload, and undo/redo
+with Cmd+Z.
 
 ## Running it
 
@@ -110,6 +116,9 @@ Nothing is sent anywhere except to Contentful's and Miro's own APIs.
 | Boolean | `Boolean` |
 | JSON object | `Object` |
 | Reference | `Link<Entry>` |
+
+Fields marked localized carry the CMA's `localized` flag, so each locale holds
+its own value.
 
 A field marked as a list becomes `Array` with the matching `items` descriptor.
 Rich text, Location, and JSON have no list form in Contentful and stay scalar

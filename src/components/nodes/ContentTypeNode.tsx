@@ -14,7 +14,7 @@ import {
 } from '@/lib/field-types'
 import { DRAG_TYPE, REORDER_TYPE, LibraryField } from '@/lib/field-library'
 
-interface PendingField { type: FieldType; isArray: boolean; name: string; required: boolean }
+interface PendingField { type: FieldType; isArray: boolean; name: string; required: boolean; localized: boolean }
 
 function FieldRow({
   field,
@@ -115,6 +115,15 @@ function FieldRow({
         <meta.Icon size={ICON_SIZE.tiny} weight={ICON_WEIGHT} />
       </span>
       <span className="text-xs text-gray-700 flex-1 truncate">{field.name}</span>
+      {field.localized && (
+        <span
+          className="flex-shrink-0 text-[9px] font-bold text-white rounded px-1 leading-[14px]"
+          style={{ backgroundColor: '#5A657C' }}
+          title="Localized — separate value per locale"
+        >
+          i18n
+        </span>
+      )}
       {field.required && <span className="text-[10px] text-red-400 flex-shrink-0">*</span>}
 
       {hovered && (
@@ -213,13 +222,13 @@ export default function ContentTypeNode({ id, data: rawData }: NodeProps) {
     const raw = e.dataTransfer.getData(DRAG_TYPE)
     if (!raw) return
     const field = JSON.parse(raw) as LibraryField
-    setPending({ type: field.type, isArray: field.isArray ?? false, name: '', required: false })
+    setPending({ type: field.type, isArray: field.isArray ?? false, name: '', required: false, localized: false })
   }
 
   function commitPending() {
     if (!pending) return
     const name = pending.name.trim()
-    if (name) data.onDropField(id, { name, type: pending.type, required: pending.required, isArray: pending.isArray })
+    if (name) data.onDropField(id, { name, type: pending.type, required: pending.required, isArray: pending.isArray, localized: pending.localized })
     setPending(null)
   }
 
@@ -475,15 +484,29 @@ export default function ContentTypeNode({ id, data: rawData }: NodeProps) {
               />
             </div>
             <div className="flex items-center justify-between">
-              <label className="nodrag flex items-center gap-1 text-[11px] text-gray-600 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={pending.required}
-                  onChange={(e) => setPending((p) => p ? { ...p, required: e.target.checked } : null)}
-                  className="nodrag w-3 h-3 accent-blue-600"
-                />
-                Required
-              </label>
+              <div className="flex items-center gap-2.5">
+                <label className="nodrag flex items-center gap-1 text-[11px] text-gray-600 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={pending.required}
+                    onChange={(e) => setPending((p) => p ? { ...p, required: e.target.checked } : null)}
+                    className="nodrag w-3 h-3 accent-blue-600"
+                  />
+                  Required
+                </label>
+                <label
+                  className="nodrag flex items-center gap-1 text-[11px] text-gray-600 cursor-pointer select-none"
+                  title="Separate value per locale"
+                >
+                  <input
+                    type="checkbox"
+                    checked={pending.localized}
+                    onChange={(e) => setPending((p) => p ? { ...p, localized: e.target.checked } : null)}
+                    className="nodrag w-3 h-3 accent-blue-600"
+                  />
+                  Localized
+                </label>
+              </div>
               <div className="flex items-center gap-1">
                 <button
                   onMouseDown={(e) => e.stopPropagation()}

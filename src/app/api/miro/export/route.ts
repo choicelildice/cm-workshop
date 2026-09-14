@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/require-auth'
+import { miroStickyColor } from '@/lib/sticky-colors'
 import {
   FIELD_TYPE_META,
   DEFAULT_KINDS,
@@ -23,6 +24,7 @@ const GAP = 350
 interface ExportField { id: string; name: string; type: string; required: boolean; isArray: boolean }
 interface ExportNode { id: string; position: { x: number; y: number }; data: { label: string; fields: ExportField[]; kind?: ContentTypeKind; emoji?: string } }
 interface ExportEdge { id: string; source: string; target: string }
+interface ExportSticky { id: string; position: { x: number; y: number }; text: string; color?: string }
 interface MiroItem { position?: { x: number; y: number }; geometry?: { width: number; height: number }; type?: string }
 
 function escapeHtml(s: string): string {
@@ -64,8 +66,9 @@ export async function POST(req: NextRequest) {
   if (denied) return denied
 
   try {
-    const { nodes, edges, boardId: rawBoardId, token, kinds: rawKinds } = (await req.json()) as {
-      nodes: ExportNode[]; edges: ExportEdge[]; boardId: string; token: string; kinds?: KindDef[]
+    const { nodes, edges, stickies = [], boardId: rawBoardId, token, kinds: rawKinds } = (await req.json()) as {
+      nodes: ExportNode[]; edges: ExportEdge[]; stickies?: ExportSticky[]
+      boardId: string; token: string; kinds?: KindDef[]
     }
 
     // Kind labels/colours are user-configurable; fall back to the defaults
@@ -73,6 +76,9 @@ export async function POST(req: NextRequest) {
     const kindLabelOf = (k?: ContentTypeKind) => resolveKindLabel(k, kinds)
 
     if (!token || !rawBoardId) return NextResponse.json({ error: 'token and boardId are required' }, { status: 400 })
+    if (!nodes?.length && !stickies.length) {
+      return NextResponse.json({ error: 'Nothing on the board to export' }, { status: 400 })
+    }
 
     const boardId = extractBoardId(rawBoardId)
 
@@ -153,14 +159,19 @@ export async function POST(req: NextRequest) {
     )
 
     // ── 3. Compute placement origin ──────────────────────────────────────
-    // Center of new content block in React Flow space
-    const rfXs = nodes.map((n) => n.position.x)
-    const rfYs = nodes.map((n) => n.position.y)
+    // Centre of the new content block in React Flow space. Stickies are
+    // included so a board of only sticky notes still positions correctly.
+    const placed = [...nodes, ...stickies]
+    const rfXs = placed.map((n) => n.position.x)
+    const rfYs = placed.map((n) => n.position.y)
     const rfCx = rfXs.length ? (Math.min(...rfXs) + Math.max(...rfXs)) / 2 : 0
     const rfCy = rfYs.length ? (Math.min(...rfYs) + Math.max(...rfYs)) / 2 : 0
 
-    // New block width in Miro coords (approx)
-    const newBlockW = (Math.max(...rfXs) - Math.min(...rfXs)) * SCALE + CARD_W
+    // New block width in Miro coords (approx). Guarded because Math.max of an
+    // empty array is -Infinity, which would poison every downstream position.
+    const newBlockW = rfXs.length
+      ? (Math.max(...rfXs) - Math.min(...rfXs)) * SCALE + CARD_W
+      : CARD_W
 
     // Place to the right of existing content, vertically centered with it
     const originX = hasExisting ? exMaxX + GAP + newBlockW / 2 : 0
@@ -180,13 +191,30 @@ export async function POST(req: NextRequest) {
       ),
     }))
 
+    // Sticky notes share the cards' coordinate space. Miro derives the second
+    // dimension from the shape's aspect ratio, so only width is sent.
+    const STICKY_W = Math.round(200 * sizeRatio)
+    const stickyLayouts = stickies.map((st) => ({
+      sticky: st,
+      bx: originX + (st.position.x - rfCx) * SCALE,
+      by: originY + (st.position.y - rfCy) * SCALE,
+    }))
+
     // ── 5. Create one frame behind all cards ─────────────────────────────
+    // Stickies are included in the bounds so they sit inside the frame rather
+    // than spilling outside it.
     let fMinX = Infinity, fMaxX = -Infinity, fMinY = Infinity, fMaxY = -Infinity
     for (const { bx, by, cardH } of layouts) {
       fMinX = Math.min(fMinX, bx)
       fMaxX = Math.max(fMaxX, bx + CARD_W)
       fMinY = Math.min(fMinY, by)
       fMaxY = Math.max(fMaxY, by + cardH)
+    }
+    for (const { bx, by } of stickyLayouts) {
+      fMinX = Math.min(fMinX, bx)
+      fMaxX = Math.max(fMaxX, bx + STICKY_W)
+      fMinY = Math.min(fMinY, by)
+      fMaxY = Math.max(fMaxY, by + STICKY_W)
     }
 
     const frameW = fMaxX - fMinX + FRAME_PAD * 2
@@ -281,6 +309,26 @@ export async function POST(req: NextRequest) {
         parent: { id: frameId },
       })
       nodeToMiroId[node.id] = shape.id
+    }
+
+    // ── 6b. Sticky notes ─────────────────────────────────────────────────
+    // fillColor takes one of Miro's 16 named values, not a hex; geometry
+    // accepts width OR height, never both (the shape fixes the ratio).
+    for (const { sticky, bx, by } of stickyLayouts) {
+      await miroReq(token, 'POST', `/boards/${boardId}/sticky_notes`, {
+        data: { content: escapeHtml(sticky.text), shape: 'square' },
+        style: {
+          fillColor: miroStickyColor(sticky.color),
+          textAlign: 'left',
+          textAlignVertical: 'top',
+        },
+        position: {
+          x: (bx + STICKY_W / 2) - frameLeft,
+          y: (by + STICKY_W / 2) - frameTop,
+        },
+        geometry: { width: STICKY_W },
+        parent: { id: frameId },
+      })
     }
 
     // ── 7. Connectors ────────────────────────────────────────────────────

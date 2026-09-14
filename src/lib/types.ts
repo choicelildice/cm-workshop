@@ -23,6 +23,8 @@ export interface ContentField {
   type: FieldType
   required: boolean
   isArray: boolean
+  /** Maps to the CMA's `localized` flag: per-locale values for this field. */
+  localized?: boolean
 }
 
 export interface ContentTypeNodeData {
@@ -50,5 +52,14 @@ export interface ContentTypeNodeData {
 export interface ImageNodeData {
   imageUrl: string
   label: string
+  onDelete: (nodeId: string) => void
+}
+
+export interface StickyNodeData {
+  text: string
+  /** Hex from STICKY_COLORS; maps to a named Miro sticky colour on export. */
+  color?: string
+  onChangeText: (nodeId: string, text: string) => void
+  onChangeColor: (nodeId: string, color: string) => void
   onDelete: (nodeId: string) => void
 }

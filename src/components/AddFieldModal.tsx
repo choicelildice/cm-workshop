@@ -15,6 +15,7 @@ export default function AddFieldModal({ nodeId, onAdd, onClose }: Props) {
   const [type, setType] = useState<FieldType>('text')
   const [required, setRequired] = useState(false)
   const [isArray, setIsArray] = useState(false)
+  const [localized, setLocalized] = useState(false)
 
   const [typeQuery, setTypeQuery] = useState('')
   const [dropdownOpen, setDropdownOpen] = useState(false)
@@ -74,7 +75,7 @@ export default function AddFieldModal({ nodeId, onAdd, onClose }: Props) {
   function handleSubmit(e?: React.FormEvent) {
     e?.preventDefault()
     if (!name.trim()) return
-    onAdd(nodeId, { name: name.trim(), type, required, isArray })
+    onAdd(nodeId, { name: name.trim(), type, required, isArray, localized })
     onClose()
   }
 
@@ -176,6 +177,13 @@ export default function AddFieldModal({ nodeId, onAdd, onClose }: Props) {
             <label className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer select-none">
               <input type="checkbox" className="rounded" checked={isArray} onChange={(e) => setIsArray(e.target.checked)} />
               Array (list of)
+            </label>
+            <label
+              className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer select-none"
+              title="Separate value per locale"
+            >
+              <input type="checkbox" className="rounded" checked={localized} onChange={(e) => setLocalized(e.target.checked)} />
+              Localized
             </label>
           </div>
 

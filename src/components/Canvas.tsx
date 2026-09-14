@@ -20,11 +20,13 @@ import {
 import { v4 as uuidv4 } from 'uuid'
 import ContentTypeNode from './nodes/ContentTypeNode'
 import ImageNode from './nodes/ImageNode'
+import StickyNode from './nodes/StickyNode'
 import AddFieldModal from './AddFieldModal'
-import { ContentField, ContentTypeNodeData, ImageNodeData } from '@/lib/types'
+import { ContentField, ContentTypeNodeData, ImageNodeData, StickyNodeData } from '@/lib/types'
 import { migrateFieldType, type ContentTypeKind, type KindDef } from '@/lib/field-type-meta'
 import { saveImage, loadImage, deleteImages, listImageIds } from '@/lib/image-store'
 import { snapPosition, NO_GUIDES, type Guides } from '@/lib/snap'
+import { DEFAULT_STICKY_COLOR } from '@/lib/sticky-colors'
 import { loadProjectData, saveProjectData, allImageNodeIds } from '@/lib/projects'
 
 interface CanvasProps {
@@ -35,6 +37,7 @@ interface CanvasProps {
   onReady: (actions: {
     addContentType: (name: string) => void
     addImageNode: (file: File) => void
+    addSticky: () => void
     clearBoard: () => void
     getExportData: () => { nodes: unknown[]; edges: unknown[] }
     importContentTypes: (types: {
@@ -48,6 +51,7 @@ interface CanvasProps {
 type PlacementData =
   | { type: 'contentType'; name: string }
   | { type: 'image'; file: File; imageUrl: string }
+  | { type: 'sticky' }
 
 function FlowControls({
   fitViewRef,
@@ -79,6 +83,7 @@ function FlowControls({
 const nodeTypes = {
   contentType: ContentTypeNode,
   image: ImageNode,
+  sticky: StickyNode,
 }
 
 export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
@@ -194,6 +199,37 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
       setNodes((nds) => nds.filter((n) => n.id !== nodeId))
     },
     [setNodes, mark]
+  )
+
+  const handleStickyText = useCallback(
+    (nodeId: string, text: string) => {
+      mark()
+      setNodes((nds) =>
+        nds.map((n) => (n.id === nodeId ? { ...n, data: { ...n.data, text } } : n))
+      )
+    },
+    [setNodes, mark]
+  )
+
+  const handleStickyColor = useCallback(
+    (nodeId: string, color: string) => {
+      mark()
+      setNodes((nds) =>
+        nds.map((n) => (n.id === nodeId ? { ...n, data: { ...n.data, color } } : n))
+      )
+    },
+    [setNodes, mark]
+  )
+
+  const makeStickyData = useCallback(
+    (text = '', color = DEFAULT_STICKY_COLOR): StickyNodeData => ({
+      text,
+      color,
+      onChangeText: handleStickyText,
+      onChangeColor: handleStickyColor,
+      onDelete: handleDeleteImage,
+    }),
+    [handleStickyText, handleStickyColor, handleDeleteImage]
   )
 
   const handleDropField = useCallback(
@@ -421,6 +457,25 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
     [setNodes, setEdges, makeContentTypeData, mark]
   )
 
+  // Internal: actually create a sticky note at a flow position
+  const placeStickyAt = useCallback(
+    (position: { x: number; y: number }) => {
+      mark()
+      const id = uuidv4()
+      setNodes((nds) => [
+        ...nds,
+        { id, type: 'sticky', position, data: makeStickyData() as unknown as Record<string, unknown> },
+      ])
+    },
+    [setNodes, makeStickyData, mark]
+  )
+
+  const addSticky = useCallback(() => {
+    placementRef.current = { type: 'sticky' }
+    setIsPlacing(true)
+    setGhostPos(null)
+  }, [])
+
   // Enter placement mode for a content type
   const addContentType = useCallback((name: string) => {
     placementRef.current = { type: 'contentType', name }
@@ -479,6 +534,7 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
       e.preventDefault()
       e.stopPropagation()
       if (p.type === 'contentType') placeContentTypeAt(p.name, pos)
+      else if (p.type === 'sticky') placeStickyAt(pos)
       else placeImageAt(p.file, p.imageUrl, pos)
       clearPlacement()
     }
@@ -491,7 +547,7 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
       window.removeEventListener('keydown', onKeyDown)
       window.removeEventListener('mousedown', onMouseDownCapture, true)
     }
-  }, [isPlacing, placeContentTypeAt, placeImageAt])
+  }, [isPlacing, placeContentTypeAt, placeImageAt, placeStickyAt])
 
   const getExportData = useCallback(() => {
     const exportNodes = nodes
@@ -505,7 +561,15 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
     const exportEdges = edges.map((e) => ({
       id: e.id, source: e.source, target: e.target, sourceHandle: e.sourceHandle ?? null,
     }))
-    return { nodes: exportNodes, edges: exportEdges }
+    // Sticky notes go to Miro as real sticky notes; Contentful ignores them.
+    const stickies = nodes
+      .filter((n) => n.type === 'sticky')
+      .map((n) => {
+        const d = n.data as unknown as StickyNodeData
+        return { id: n.id, position: n.position, text: d.text, color: d.color }
+      })
+      .filter((s) => s.text.trim().length > 0)
+    return { nodes: exportNodes, edges: exportEdges, stickies }
   }, [nodes, edges])
 
   // Empties the open project only. Images referenced by other projects are
@@ -517,8 +581,8 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
   }, [setNodes, setEdges])
 
   useEffect(() => {
-    onReady({ addContentType, addImageNode, clearBoard, getExportData, importContentTypes })
-  }, [onReady, addContentType, addImageNode, clearBoard, getExportData, importContentTypes])
+    onReady({ addContentType, addImageNode, addSticky, clearBoard, getExportData, importContentTypes })
+  }, [onReady, addContentType, addImageNode, addSticky, clearBoard, getExportData, importContentTypes])
 
   const restoredRef = useRef(false)
   const fitViewRef = useRef<(() => void) | null>(null)
@@ -577,6 +641,11 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
         if (n.type === 'image') {
           const { onDelete, imageUrl, ...rest } = n.data as unknown as ImageNodeData
           void onDelete; void imageUrl
+          return { ...n, data: rest }
+        }
+        if (n.type === 'sticky') {
+          const { onChangeText, onChangeColor, onDelete, ...rest } = n.data as unknown as StickyNodeData
+          void onChangeText; void onChangeColor; void onDelete
           return { ...n, data: rest }
         }
         return n
@@ -639,9 +708,13 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
           const imageUrl = (live?.data as unknown as ImageNodeData | undefined)?.imageUrl ?? ''
           return { ...n, data: { ...n.data, imageUrl, onDelete: handleDeleteImage } }
         }
+        if (n.type === 'sticky') {
+          const d = n.data as unknown as { text: string; color?: string }
+          return { ...n, data: makeStickyData(d.text, d.color) as unknown as Record<string, unknown> }
+        }
         return n
       }),
-    [makeContentTypeData, handleDeleteImage]
+    [makeContentTypeData, handleDeleteImage, makeStickyData]
   )
 
   const applySnapshot = useCallback(
@@ -752,6 +825,10 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
             if (imageUrl) savedImagesRef.current.add(n.id)
             return { ...n, data: { ...n.data, imageUrl, onDelete: handleDeleteImage } }
           }
+          if (n.type === 'sticky') {
+            const d = n.data as unknown as { text: string; color?: string }
+            return { ...n, data: makeStickyData(d.text, d.color) as unknown as Record<string, unknown> }
+          }
           return n
         })
       )
@@ -767,7 +844,7 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
 
     load()
     return () => { cancelled = true }
-  }, [projectId, makeContentTypeData, handleDeleteImage, setNodes, setEdges, serializeNodes])
+  }, [projectId, makeContentTypeData, handleDeleteImage, makeStickyData, setNodes, setEdges, serializeNodes])
 
   // Delete selected nodes/edges.
   //
@@ -945,7 +1022,17 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
             transform: 'translate(0, 0)',
           }}
         >
-          {placementData.type === 'contentType' ? (
+          {placementData.type === 'sticky' ? (
+            <div
+              style={{
+                width: 200,
+                height: 200,
+                background: DEFAULT_STICKY_COLOR,
+                borderRadius: 2,
+                boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
+              }}
+            />
+          ) : placementData.type === 'contentType' ? (
             <div style={{ width: 200, background: '#0f1042', borderRadius: 6, padding: '4px 10px', color: 'white', fontSize: 12, fontWeight: 700, boxShadow: '0 4px 12px rgba(0,0,0,0.2)' }}>
               {placementData.name}
             </div>

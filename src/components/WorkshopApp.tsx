@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import dynamic from 'next/dynamic'
-import { ImageIcon, PlusSquare, ExternalLink, Trash2, Settings, UploadCloud, DownloadCloud } from 'lucide-react'
+import { ImageIcon, PlusSquare, ExternalLink, Trash2, Settings, UploadCloud, DownloadCloud, StickyNote } from 'lucide-react'
 import FieldLibrary from '@/components/FieldLibrary'
 import MiroExportModal from '@/components/MiroExportModal'
 import ContentfulExportModal from '@/components/ContentfulExportModal'
@@ -18,6 +18,7 @@ const Canvas = dynamic(() => import('@/components/Canvas'), { ssr: false })
 interface CanvasActions {
   addContentType: (name: string) => void
   addImageNode: (file: File) => void
+  addSticky: () => void
   clearBoard: () => void
   getExportData: () => { nodes: unknown[]; edges: unknown[] }
   importContentTypes: (types: {
@@ -144,6 +145,15 @@ export default function WorkshopApp() {
             Add
           </button>
         </div>
+
+        {/* Sticky note */}
+        <button
+          className="flex items-center gap-1.5 text-base font-semibold text-gray-800 hover:text-blue-700 hover:bg-blue-50 px-3 py-1.5 rounded-lg transition-colors border border-gray-300 hover:border-blue-300"
+          onClick={() => actionsRef.current?.addSticky()}
+        >
+          <StickyNote size={15} />
+          Sticky
+        </button>
 
         {/* Upload Image */}
         <button

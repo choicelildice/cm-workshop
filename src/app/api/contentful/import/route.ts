@@ -9,6 +9,7 @@ interface CmaFieldRaw {
   name: string
   type: string
   required?: boolean
+  localized?: boolean
   omitted?: boolean
   linkType?: string
   items?: { type?: string; linkType?: string; validations?: unknown[] }
@@ -113,13 +114,14 @@ export async function POST(req: NextRequest) {
         // Omitted fields are hidden from the API and would confuse the model
         .filter((f) => !f.omitted)
         .map((f) => {
-          const { fieldType, isArray, linkTargets } = fromCmaField(f)
+          const { fieldType, isArray, localized, linkTargets } = fromCmaField(f)
           return {
             cmaId: f.id,
             name: f.name,
             type: fieldType,
             required: !!f.required,
             isArray,
+            localized,
             // Kept so the caller can build edges between imported cards
             linkTargets: linkTargets.filter((id) => importedIds.has(id)),
             // Reported so the UI can note references that point outside the

@@ -6,7 +6,7 @@ import type { FieldType } from '@/lib/types'
 
 const CMA = 'https://api.contentful.com'
 
-interface ExportField { id: string; name: string; type: string; required: boolean; isArray: boolean }
+interface ExportField { id: string; name: string; type: string; required: boolean; isArray: boolean; localized?: boolean }
 interface ExportNode { id: string; data: { label: string; fields: ExportField[] } }
 interface ExportEdge { source: string; target: string; sourceHandle?: string | null }
 
@@ -102,6 +102,7 @@ function buildPlan(
           fieldType,
           required: f.required,
           isArray: f.isArray,
+          localized: f.localized,
           linkTargets,
         })
       )
@@ -202,6 +203,7 @@ export async function POST(req: NextRequest) {
             name: f.name,
             type: f.type === 'Array' ? `Array<${f.items?.linkType ?? f.items?.type}>` : f.type,
             required: f.required,
+            localized: f.localized,
             linkedTo:
               (f.validations?.[0] as { linkContentType?: string[] } | undefined)?.linkContentType ??
               (f.items?.validations?.[0] as { linkContentType?: string[] } | undefined)?.linkContentType,
