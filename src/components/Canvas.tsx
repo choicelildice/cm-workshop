@@ -489,7 +489,18 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
       const id = uuidv4()
       setNodes((nds) => [
         ...nds,
-        { id, type: 'sticky', position, data: makeStickyData() as unknown as Record<string, unknown> },
+        {
+          id,
+          type: 'sticky',
+          position,
+          // Explicit dimensions so the node has size before any resize. React
+          // Flow resolves width as `node.width ?? initialWidth ?? style.width`,
+          // and a sticky has no Handle or intrinsic content to measure, so
+          // without these it mounts collapsed and appears to vanish.
+          width: 200,
+          height: 200,
+          data: makeStickyData() as unknown as Record<string, unknown>,
+        },
       ])
     },
     [setNodes, makeStickyData, mark]
@@ -745,7 +756,12 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
         }
         if (n.type === 'sticky') {
           const d = n.data as unknown as { text: string; color?: string }
-          return { ...n, data: makeStickyData(d.text, d.color) as unknown as Record<string, unknown> }
+          return {
+            ...n,
+            width: n.width ?? 200,
+            height: n.height ?? 200,
+            data: makeStickyData(d.text, d.color) as unknown as Record<string, unknown>,
+          }
         }
         return n
       }),
@@ -862,7 +878,13 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
           }
           if (n.type === 'sticky') {
             const d = n.data as unknown as { text: string; color?: string }
-            return { ...n, data: makeStickyData(d.text, d.color) as unknown as Record<string, unknown> }
+            return {
+              ...n,
+              // Stickies saved before resizing existed carry no dimensions
+              width: n.width ?? 200,
+              height: n.height ?? 200,
+              data: makeStickyData(d.text, d.color) as unknown as Record<string, unknown>,
+            }
           }
           return n
         })
