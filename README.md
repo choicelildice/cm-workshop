@@ -81,11 +81,16 @@ APP_PASSWORD=x7Kp2mQ9vLd4Rt8w
 ```
 
 Or one code per audience, so each customer or team can be revoked
-independently:
+independently. Entries may be separated by newlines or commas, and `#` starts a
+comment, so the value can be kept readable:
 
 ```bash
-APP_PASSWORD=acme:x7Kp2m…,globex:9Fq4tR…,internal:aB8sN…
+APP_PASSWORD="contentful:prof-serve-contentful   # us
+Ring:7IwaHrX8C53uhsjsvhvxEG5D                    # Ring, issued 2026-09-15"
 ```
+
+Comments are stripped per line before entries are split, so a comma inside a
+note is safe.
 
 The label before the colon is not secret. It identifies who a code was issued
 to: deleting one entry and redeploying invalidates that audience's sessions and

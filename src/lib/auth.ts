@@ -45,10 +45,27 @@ function signingSecret(): string {
   return process.env.SESSION_SECRET?.trim() || rawSetting()
 }
 
+/**
+ * Parses the access code setting.
+ *
+ * Entries may be separated by newlines, commas, or both, so the value can be
+ * kept in a readable one-per-line form in a password manager and pasted
+ * straight in. `#` starts a comment, which makes it practical to record who a
+ * code was issued to and when:
+ *
+ *     acme:x7Kp2m…      # Acme Corp, issued 2026-09-15
+ *     internal:9Fq4tR…  # us
+ */
 export function parseAccessCodes(setting: string): AccessCode[] {
   if (!setting) return []
   return setting
-    .split(',')
+    .split(/\r?\n/)
+    // Strip each line's comment FIRST. Splitting on separators before doing so
+    // would let a comma inside a comment ("# Acme, 2026-09-15") break the line
+    // in two and turn the rest of the note into a valid access code.
+    .map((line) => line.split('#')[0])
+    // Commas still separate entries, so a single-line value keeps working
+    .flatMap((line) => line.split(','))
     .map((entry) => entry.trim())
     .filter(Boolean)
     .map((entry) => {
