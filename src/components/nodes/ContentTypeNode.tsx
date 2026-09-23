@@ -25,6 +25,8 @@ function FieldRow({
   onCopy,
   onReorder,
   onUpdate,
+  onTrace,
+  isTraced,
 }: {
   field: ContentField
   nodeId: string
@@ -33,6 +35,8 @@ function FieldRow({
   onCopy: (field: ContentField) => void
   onReorder: (nodeId: string, fieldId: string, toIndex: number) => void
   onUpdate: (nodeId: string, fieldId: string, patch: Partial<Omit<ContentField, 'id'>>) => void
+  onTrace: (nodeId: string, fieldId: string) => void
+  isTraced: boolean
 }) {
   const [hovered, setHovered] = useState(false)
   const [dragging, setDragging] = useState(false)
@@ -48,10 +52,28 @@ function FieldRow({
   const meta = FIELD_TYPES[field.type]
   const isLinkable = field.type === 'reference'
 
+  // A click that moved is a drag-to-reorder, not a trace
+  const pressRef = useRef<{ x: number; y: number } | null>(null)
+
   function handleMouseDown(e: React.MouseEvent) {
     startedOnConnectRef.current = !!(e.target as HTMLElement).closest(
       '[data-connect-zone], .react-flow__handle'
     )
+    pressRef.current = { x: e.clientX, y: e.clientY }
+  }
+
+  function handleClick(e: React.MouseEvent) {
+    // Only reference fields have arrows to trace
+    if (!isLinkable) return
+    // Row buttons, the connect handle and the editor manage their own clicks
+    if ((e.target as HTMLElement).closest('button, input, [data-connect-zone], .react-flow__handle')) return
+
+    const from = pressRef.current
+    pressRef.current = null
+    if (from && Math.hypot(e.clientX - from.x, e.clientY - from.y) > 4) return
+
+    e.stopPropagation()
+    onTrace(nodeId, field.id)
   }
 
   function handleDragStart(e: React.DragEvent) {
@@ -221,10 +243,17 @@ function FieldRow({
       onDragOver={handleDragOver}
       onDragLeave={() => setInsertAt(null)}
       onDrop={handleDrop}
+      onClick={handleClick}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       onDoubleClick={(e) => { e.stopPropagation(); setEditing(true) }}
-      style={{ opacity: dragging ? 0.4 : 1, cursor: 'grab' }}
+      style={{
+        opacity: dragging ? 0.4 : 1,
+        cursor: 'grab',
+        backgroundColor: isTraced ? '#e8f5ff' : undefined,
+        boxShadow: isTraced ? 'inset 2px 0 0 #1773eb' : undefined,
+      }}
+      title={isLinkable ? 'Click to trace this reference' : undefined}
     >
       {insertAt && (
         <span
@@ -618,6 +647,8 @@ export default function ContentTypeNode({ id, data: rawData }: NodeProps) {
             onCopy={data.onCopyField}
             onReorder={data.onReorderField}
             onUpdate={data.onUpdateField}
+            onTrace={data.onTraceField}
+            isTraced={data.tracedFieldId === field.id}
           />
         ))}
         {pending && (

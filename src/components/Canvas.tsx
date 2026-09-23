@@ -152,6 +152,18 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
     setAddFieldTarget(nodeId)
   }, [])
 
+  /**
+   * Field whose references are being traced. Clicking a reference field dims
+   * everything unrelated so its arrows stand out on a dense board.
+   */
+  const [tracedField, setTracedField] = useState<{ nodeId: string; fieldId: string } | null>(null)
+
+  const handleTraceField = useCallback((nodeId: string, fieldId: string) => {
+    setTracedField((prev) =>
+      prev?.nodeId === nodeId && prev.fieldId === fieldId ? null : { nodeId, fieldId }
+    )
+  }, [])
+
   const handleDeleteField = useCallback(
     (nodeId: string, fieldId: string) => {
       mark()
@@ -364,12 +376,13 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
       onDropField: handleDropField,
       onReorderField: handleReorderField,
       onUpdateField: handleUpdateField,
+      onTraceField: handleTraceField,
       onRenameType: handleRenameType,
       onSetTypeKind: handleSetTypeKind,
       onSetTypeEmoji: handleSetTypeEmoji,
       onDeleteType: handleDeleteType,
     }),
-    [clipboard, kinds, handleAddField, handleDeleteField, handleCopyField, handlePasteField, handleDropField, handleReorderField, handleUpdateField, handleRenameType, handleSetTypeKind, handleSetTypeEmoji, handleDeleteType]
+    [clipboard, kinds, handleAddField, handleDeleteField, handleCopyField, handlePasteField, handleDropField, handleReorderField, handleUpdateField, handleTraceField, handleRenameType, handleSetTypeKind, handleSetTypeEmoji, handleDeleteType]
   )
 
   // Sync clipboard state to all existing CT nodes
@@ -610,7 +623,11 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
       // Leave React Flow's own overlays clickable while placing
       if (target.closest('.react-flow__controls, .react-flow__minimap, .react-flow__attribution')) return
       const p = placementRef.current
-      if (!p) return
+      if (!p) {
+        // Not placing: a bare canvas click clears any active trace
+        setTracedField(null)
+        return
+      }
       const pos = screenToFlowRef.current?.({ x: e.clientX, y: e.clientY })
       if (!pos) return
       // Keep React Flow from starting a node drag or selection from this press
@@ -793,13 +810,16 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
           // array into every single node.
           const {
             onAddField, onDeleteField, onCopyField, onPasteField, onDropField,
-            onReorderField, onUpdateField, onRenameType, onSetTypeKind,
-            onSetTypeEmoji, onDeleteType, hasClipboard, kinds: _kinds, ...rest
+            onReorderField, onUpdateField, onTraceField, onRenameType, onSetTypeKind,
+            onSetTypeEmoji, onDeleteType, hasClipboard, kinds: _kinds,
+            // Transient UI state: never persisted. It only ever exists on the
+            // render-time copy, but strip it so a future change can't leak it.
+            tracedFieldId: _traced, ...rest
           } = n.data as unknown as ContentTypeNodeData
           void onAddField; void onDeleteField; void onCopyField; void onPasteField
           void onDropField; void onReorderField; void onUpdateField; void onRenameType
-          void onSetTypeKind; void onSetTypeEmoji; void onDeleteType
-          void hasClipboard; void _kinds
+          void onSetTypeKind; void onSetTypeEmoji; void onDeleteType; void onTraceField
+          void hasClipboard; void _kinds; void _traced
           return { ...n, data: rest }
         }
         if (n.type === 'image') {
@@ -968,6 +988,8 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
     // undo paste another project's contents in.
     undoStackRef.current = []
     redoStackRef.current = []
+    // A trace names a node id from the outgoing board
+    setTracedField(null)
 
     // Block saving until the incoming board is in memory, so an empty canvas
     // can't overwrite the project we're about to read.
@@ -1030,6 +1052,7 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
   // instead of destroying the selection.
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') { setTracedField(null); return }
       if (e.key !== 'Backspace' && e.key !== 'Delete') return
 
       // Never hijack a keystroke meant for a text field
@@ -1141,13 +1164,64 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
     [nodes, onNodesChange]
   )
 
+  /**
+   * Edges and nodes as rendered, with the trace highlight applied.
+   *
+   * Derived rather than written into the edges themselves: each edge's `style`
+   * already carries whether it is a dashed back edge, so overwriting it would
+   * lose that. Deriving also means clearing the highlight needs no restore.
+   */
+  const { displayEdges, dimmedNodeIds } = (() => {
+    if (!tracedField) return { displayEdges: edges, dimmedNodeIds: null as Set<string> | null }
+
+    const handle = `field-${tracedField.fieldId}`
+    const lit = edges.filter(
+      (e) => e.source === tracedField.nodeId && e.sourceHandle === handle
+    )
+    // Nothing drawn from this field yet: leave the board alone rather than
+    // dimming everything to no purpose
+    if (lit.length === 0) return { displayEdges: edges, dimmedNodeIds: null }
+
+    const litIds = new Set(lit.map((e) => e.id))
+    const involved = new Set<string>([tracedField.nodeId, ...lit.map((e) => e.target)])
+
+    return {
+      displayEdges: edges.map((e) =>
+        litIds.has(e.id)
+          ? {
+              ...e,
+              animated: true,
+              zIndex: 10,
+              style: { ...e.style, stroke: '#1773eb', strokeWidth: 3.5 },
+            }
+          : { ...e, style: { ...e.style, opacity: 0.12 } }
+      ),
+      dimmedNodeIds: new Set(
+        nodes.filter((n) => n.type === 'contentType' && !involved.has(n.id)).map((n) => n.id)
+      ),
+    }
+  })()
+
+  // The traced field id goes only to the node that owns it, so a card can mark
+  // the active row without every card re-rendering on each trace.
+  const displayNodes = nodes.map((n) => {
+    const dimmed = dimmedNodeIds?.has(n.id)
+    const owns = tracedField?.nodeId === n.id
+    if (!dimmed && !owns) return n
+    return {
+      ...n,
+      ...(dimmed ? { style: { ...n.style, opacity: 0.35 } } : {}),
+      ...(owns ? { data: { ...n.data, tracedFieldId: tracedField!.fieldId } } : {}),
+    }
+  })
+
   const placementData = placementRef.current
 
   return (
     <div ref={containerRef} style={{ width: '100%', height: '100%', position: 'relative', cursor: isPlacing ? 'crosshair' : 'default' }}>
       <ReactFlow
-        nodes={nodes}
-        edges={edges}
+        nodes={displayNodes}
+        edges={displayEdges}
         onNodesChange={onNodesChangeSnapped}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
