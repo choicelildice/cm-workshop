@@ -4,9 +4,10 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "npm run check:data-safety && next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "check:data-safety": "node scripts/check-data-safety.mjs"
   },
   "dependencies": {
     "@phosphor-icons/react": "^2.1.8",

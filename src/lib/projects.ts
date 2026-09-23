@@ -54,7 +54,48 @@ export function loadProjectData(id: string): ProjectData | null {
   return read<ProjectData | null>(dataKey(id), null)
 }
 
-export function saveProjectData(id: string, data: ProjectData): void {
+/**
+ * Refused overwrite: a save that would empty a project that currently has
+ * content. Exposed for diagnostics; there is no legitimate path that does this.
+ */
+let lastRefusedSave: { id: string; had: number; at: number } | null = null
+export const getLastRefusedSave = () => lastRefusedSave
+
+/**
+ * Writes a project's board.
+ *
+ * Refuses to replace a board that has content with an empty one. Clearing a
+ * board is a real user action, but it routes through clearBoard on a board the
+ * user is looking at; a save arriving with zero nodes for a project that has
+ * some is far more likely to be a bug upstream (a load that raced, a switch
+ * that half-applied) than an intention. Since the only copy of a customer's
+ * work lives in their browser, the safe default is to decline and keep the
+ * existing data.
+ *
+ * Emptying a board deliberately still works: the in-memory board becomes empty
+ * and `allowEmpty` is passed by the paths that mean it.
+ */
+export function saveProjectData(
+  id: string,
+  data: ProjectData,
+  opts: { allowEmpty?: boolean } = {}
+): void {
+  const incomingEmpty = (data.nodes?.length ?? 0) === 0
+  if (incomingEmpty && !opts.allowEmpty) {
+    const existing = loadProjectData(id)
+    const had = existing?.nodes?.length ?? 0
+    if (had > 0) {
+      lastRefusedSave = { id, had, at: Date.now() }
+      if (process.env.NODE_ENV !== 'production') {
+        console.warn(
+          `[cm-workshop] Refused to overwrite project ${id} (${had} nodes) with an empty board. ` +
+            'Pass allowEmpty if this was deliberate.'
+        )
+      }
+      return
+    }
+  }
+
   write(dataKey(id), data)
   const projects = read<ProjectMeta[]>(INDEX_KEY, [])
   const i = projects.findIndex((p) => p.id === id)
