@@ -9,9 +9,10 @@ import ContentfulExportModal from '@/components/ContentfulExportModal'
 import ContentfulImportModal from '@/components/ContentfulImportModal'
 import ProjectMenu from '@/components/ProjectMenu'
 import KindSettingsModal from '@/components/KindSettingsModal'
-import { ensureCurrentProject, setCurrentProjectId } from '@/lib/projects'
+import { ensureCurrentProject, setCurrentProjectId, findProjectByName, createProjectWithData } from '@/lib/projects'
 import { loadKinds } from '@/lib/kind-config'
 import { hasSeenTour } from '@/lib/tour'
+import { buildSampleModel, SAMPLE_PROJECT_NAME } from '@/lib/sample-model'
 import ShareModal from '@/components/ShareModal'
 import ShareOpenPrompt from '@/components/ShareOpenPrompt'
 import { clearShareFromUrl, decodeShare, readShareFromUrl, type SharePayload } from '@/lib/share'
@@ -54,7 +55,7 @@ export default function WorkshopApp() {
   const [showKindSettings, setShowKindSettings] = useState(false)
 
   useEffect(() => {
-    setProjectId(ensureCurrentProject())
+    setProjectId(ensureCurrentProject({ name: SAMPLE_PROJECT_NAME, data: buildSampleModel() }))
     setKinds(loadKinds())
 
     // A share link takes precedence over the tour, so the two never stack
@@ -88,6 +89,18 @@ export default function WorkshopApp() {
     setIncoming(null)
     switchProject(meta.id)
   }, [incoming, switchProject])
+
+  /**
+   * Puts the sample board in front of the tour. It is the first-run project, so
+   * usually it is simply there; if it was deleted or renamed, a fresh one is
+   * created rather than the tour running against an empty canvas.
+   */
+  const openTour = useCallback(() => {
+    const existing = findProjectByName(SAMPLE_PROJECT_NAME)
+    const meta = existing ?? createProjectWithData(SAMPLE_PROJECT_NAME, buildSampleModel())
+    if (meta.id !== projectId) switchProject(meta.id)
+    setShowTour(true)
+  }, [projectId, switchProject])
 
   const dismissShare = useCallback(() => {
     clearShareFromUrl()
@@ -204,6 +217,7 @@ export default function WorkshopApp() {
             const result = actionsRef.current?.arrangeBoard()
             if (result && (result.cycles.length || result.orphans)) setArrangeNote(result)
           }}
+          data-tour="arrange"
           title="Lay out content types left to right by reference depth"
         >
           <Network size={15} />
@@ -271,6 +285,7 @@ export default function WorkshopApp() {
         <button
           className="flex items-center gap-1.5 text-base font-medium text-gray-600 hover:text-blue-700 hover:bg-blue-50 px-3 py-1.5 rounded-lg transition-colors"
           onClick={() => setShowShare(true)}
+          data-tour="share"
           title="Share this board via a link"
         >
           <Share2 size={14} />
@@ -280,7 +295,7 @@ export default function WorkshopApp() {
         {/* Tour */}
         <button
           className="flex items-center gap-1.5 text-base font-medium text-gray-600 hover:text-blue-700 hover:bg-blue-50 px-3 py-1.5 rounded-lg transition-colors"
-          onClick={() => setShowTour(true)}
+          onClick={openTour}
           title="Show the intro tour"
         >
           <HelpCircle size={14} />
