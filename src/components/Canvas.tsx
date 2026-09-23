@@ -762,8 +762,13 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
 
   // Empties the open project only. Images referenced by other projects are
   // left alone; the blob cleanup effect removes whatever is now unreferenced.
+  // Set by clearBoard so the save that follows is allowed to write an empty
+  // board. saveProjectData otherwise refuses to replace content with nothing.
+  const clearIntentRef = useRef(false)
+
   const clearBoard = useCallback(() => {
     mark()
+    clearIntentRef.current = true
     setNodes([])
     setEdges([])
   }, [setNodes, setEdges])
@@ -978,7 +983,9 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
     if (!target) return
 
     saveTimerRef.current = setTimeout(() => {
-      saveProjectData(target, { nodes: serializeNodes(nodes), edges })
+      const allowEmpty = clearIntentRef.current
+      saveProjectData(target, { nodes: serializeNodes(nodes), edges }, { allowEmpty })
+      clearIntentRef.current = false
       saveTimerRef.current = null
     }, 400)
 
@@ -998,7 +1005,7 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
         clearTimeout(saveTimerRef.current)
         saveTimerRef.current = null
       }
-      saveProjectData(previous, { nodes: serializeNodes(nodesRef.current), edges: edgesRef.current })
+      saveProjectData(previous, { nodes: serializeNodes(nodesRef.current), edges: edgesRef.current }, { allowEmpty: clearIntentRef.current })
     }
 
     // History belongs to one board; carrying it across a switch would let an
@@ -1112,7 +1119,7 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
         clearTimeout(saveTimerRef.current)
         saveTimerRef.current = null
       }
-      saveProjectData(target, { nodes: serializeNodes(nodesRef.current), edges: edgesRef.current })
+      saveProjectData(target, { nodes: serializeNodes(nodesRef.current), edges: edgesRef.current }, { allowEmpty: clearIntentRef.current })
     }
 
     window.addEventListener('beforeunload', flush)
