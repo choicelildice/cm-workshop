@@ -26,7 +26,7 @@ function FieldRow({
   onReorder,
   onUpdate,
   onTrace,
-  isTraced,
+  traceColor,
 }: {
   field: ContentField
   nodeId: string
@@ -35,8 +35,9 @@ function FieldRow({
   onCopy: (field: ContentField) => void
   onReorder: (nodeId: string, fieldId: string, toIndex: number) => void
   onUpdate: (nodeId: string, fieldId: string, patch: Partial<Omit<ContentField, 'id'>>) => void
-  onTrace: (nodeId: string, fieldId: string) => void
-  isTraced: boolean
+  onTrace: (nodeId: string, fieldId: string, additive: boolean) => void
+  /** Trace colour when this field is selected, else undefined. */
+  traceColor?: string
 }) {
   const [hovered, setHovered] = useState(false)
   const [dragging, setDragging] = useState(false)
@@ -73,7 +74,8 @@ function FieldRow({
     if (from && Math.hypot(e.clientX - from.x, e.clientY - from.y) > 4) return
 
     e.stopPropagation()
-    onTrace(nodeId, field.id)
+    // Cmd/Ctrl-click adds to the selection rather than replacing it
+    onTrace(nodeId, field.id, e.metaKey || e.ctrlKey)
   }
 
   function handleDragStart(e: React.DragEvent) {
@@ -250,10 +252,16 @@ function FieldRow({
       style={{
         opacity: dragging ? 0.4 : 1,
         cursor: 'grab',
-        backgroundColor: isTraced ? '#e8f5ff' : undefined,
-        boxShadow: isTraced ? 'inset 2px 0 0 #1773eb' : undefined,
+        backgroundColor: traceColor ? `${traceColor}14` : undefined,
+        boxShadow: traceColor ? `inset 3px 0 0 ${traceColor}` : undefined,
       }}
-      title={isLinkable ? 'Click to trace this reference' : undefined}
+      title={
+        isLinkable
+          ? traceColor
+            ? 'Click to stop tracing'
+            : 'Click to trace \u2022 \u2318-click to compare with another'
+          : undefined
+      }
     >
       {insertAt && (
         <span
@@ -426,8 +434,12 @@ export default function ContentTypeNode({ id, data: rawData }: NodeProps) {
       className="rounded-lg overflow-visible shadow-md border bg-white transition-colors"
       style={{
         width: cardWidth,
-        borderColor: dropTarget ? '#1773eb' : '#e5e7eb',
-        boxShadow: dropTarget ? '0 0 0 2px #1773eb55' : undefined,
+        borderColor: dropTarget ? '#1773eb' : data.traceTargetColor ?? '#e5e7eb',
+        boxShadow: dropTarget
+          ? '0 0 0 2px #1773eb55'
+          : data.traceTargetColor
+            ? `0 0 0 3px ${data.traceTargetColor}40`
+            : undefined,
       }}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
@@ -648,7 +660,7 @@ export default function ContentTypeNode({ id, data: rawData }: NodeProps) {
             onReorder={data.onReorderField}
             onUpdate={data.onUpdateField}
             onTrace={data.onTraceField}
-            isTraced={data.tracedFieldId === field.id}
+            traceColor={data.tracedFieldColors?.[field.id]}
           />
         ))}
         {pending && (

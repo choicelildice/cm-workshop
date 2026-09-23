@@ -27,6 +27,7 @@ import { migrateFieldType, type ContentTypeKind, type KindDef } from '@/lib/fiel
 import { saveImage, loadImage, deleteImages, listImageIds } from '@/lib/image-store'
 import { snapPosition, NO_GUIDES, type Guides } from '@/lib/snap'
 import { layoutModel, edgeKey, type LayoutEdge } from '@/lib/layout'
+import { TRACE_COLORS, SHARED_COLOR } from '@/lib/trace-colors'
 import { DEFAULT_STICKY_COLOR } from '@/lib/sticky-colors'
 import { loadProjectData, saveProjectData, allImageNodeIds } from '@/lib/projects'
 
@@ -48,6 +49,12 @@ interface CanvasProps {
       fields: { cmaId: string; name: string; type: string; required: boolean; isArray: boolean; localized?: boolean; linkTargets: string[] }[]
     }[]) => void
   }) => void
+}
+
+interface TraceSummary {
+  fields: { label: string; fieldName: string; colorIndex: number; targetCount: number }[]
+  /** Types reached by more than one traced field. */
+  sharedLabels: string[]
 }
 
 type PlacementData =
@@ -153,15 +160,25 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
   }, [])
 
   /**
-   * Field whose references are being traced. Clicking a reference field dims
-   * everything unrelated so its arrows stand out on a dense board.
+   * Reference fields being traced. Each gets its own colour so several can be
+   * compared at once, which answers "do these two fields point at the same
+   * types?" — the shared targets are the interesting part.
    */
-  const [tracedField, setTracedField] = useState<{ nodeId: string; fieldId: string } | null>(null)
+  const [tracedFields, setTracedFields] = useState<{ nodeId: string; fieldId: string }[]>([])
 
-  const handleTraceField = useCallback((nodeId: string, fieldId: string) => {
-    setTracedField((prev) =>
-      prev?.nodeId === nodeId && prev.fieldId === fieldId ? null : { nodeId, fieldId }
-    )
+  const handleTraceField = useCallback((nodeId: string, fieldId: string, additive: boolean) => {
+    setTracedFields((prev) => {
+      const at = prev.findIndex((f) => f.nodeId === nodeId && f.fieldId === fieldId)
+
+      // Clicking a traced field always removes it, additive or not
+      if (at !== -1) return prev.filter((_, i) => i !== at)
+      // Plain click replaces the selection; Cmd/Ctrl-click adds to it
+      if (!additive) return [{ nodeId, fieldId }]
+      // Past TRACE_COLORS.length the colours stop being tellable apart and the
+      // dimming stops meaning anything, so ignore further additions
+      if (prev.length >= TRACE_COLORS.length) return prev
+      return [...prev, { nodeId, fieldId }]
+    })
   }, [])
 
   const handleDeleteField = useCallback(
@@ -625,7 +642,7 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
       const p = placementRef.current
       if (!p) {
         // Not placing: a bare canvas click clears any active trace
-        setTracedField(null)
+        setTracedFields([])
         return
       }
       const pos = screenToFlowRef.current?.({ x: e.clientX, y: e.clientY })
@@ -814,12 +831,12 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
             onSetTypeEmoji, onDeleteType, hasClipboard, kinds: _kinds,
             // Transient UI state: never persisted. It only ever exists on the
             // render-time copy, but strip it so a future change can't leak it.
-            tracedFieldId: _traced, ...rest
+            tracedFieldColors: _tc, traceTargetColor: _ttc, ...rest
           } = n.data as unknown as ContentTypeNodeData
           void onAddField; void onDeleteField; void onCopyField; void onPasteField
           void onDropField; void onReorderField; void onUpdateField; void onRenameType
           void onSetTypeKind; void onSetTypeEmoji; void onDeleteType; void onTraceField
-          void hasClipboard; void _kinds; void _traced
+          void hasClipboard; void _kinds; void _tc; void _ttc
           return { ...n, data: rest }
         }
         if (n.type === 'image') {
@@ -988,8 +1005,8 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
     // undo paste another project's contents in.
     undoStackRef.current = []
     redoStackRef.current = []
-    // A trace names a node id from the outgoing board
-    setTracedField(null)
+    // A trace names node ids from the outgoing board
+    setTracedFields([])
 
     // Block saving until the incoming board is in memory, so an empty canvas
     // can't overwrite the project we're about to read.
@@ -1052,7 +1069,7 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
   // instead of destroying the selection.
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Escape') { setTracedField(null); return }
+      if (e.key === 'Escape') { setTracedFields([]); return }
       if (e.key !== 'Backspace' && e.key !== 'Delete') return
 
       // Never hijack a keystroke meant for a text field
@@ -1165,53 +1182,119 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
   )
 
   /**
-   * Edges and nodes as rendered, with the trace highlight applied.
+   * Edges and nodes as rendered, with trace highlights applied.
    *
    * Derived rather than written into the edges themselves: each edge's `style`
    * already carries whether it is a dashed back edge, so overwriting it would
-   * lose that. Deriving also means clearing the highlight needs no restore.
+   * lose that. Deriving also means clearing a trace needs no restore.
    */
-  const { displayEdges, dimmedNodeIds } = (() => {
-    if (!tracedField) return { displayEdges: edges, dimmedNodeIds: null as Set<string> | null }
+  const { displayEdges, dimmedNodeIds, nodeTint, traceSummary } = (() => {
+    const none = {
+      displayEdges: edges,
+      dimmedNodeIds: null as Set<string> | null,
+      nodeTint: null as Map<string, string> | null,
+      traceSummary: null as TraceSummary | null,
+    }
+    if (tracedFields.length === 0) return none
 
-    const handle = `field-${tracedField.fieldId}`
-    const lit = edges.filter(
-      (e) => e.source === tracedField.nodeId && e.sourceHandle === handle
+    // Which traced fields reach each edge, and each target type
+    const edgeColor = new Map<string, number>()
+    const targetHits = new Map<string, number[]>()
+    const perField: { nodeId: string; fieldId: string; colorIndex: number; targets: string[] }[] = []
+
+    tracedFields.forEach((tf, i) => {
+      const handle = `field-${tf.fieldId}`
+      const lit = edges.filter((e) => e.source === tf.nodeId && e.sourceHandle === handle)
+      for (const e of lit) {
+        // First traced field to claim an edge owns its colour. An edge can only
+        // belong to one field anyway, since the handle identifies the field.
+        if (!edgeColor.has(e.id)) edgeColor.set(e.id, i)
+        const hits = targetHits.get(e.target) ?? []
+        if (!hits.includes(i)) hits.push(i)
+        targetHits.set(e.target, hits)
+      }
+      perField.push({ ...tf, colorIndex: i, targets: lit.map((e) => e.target) })
+    })
+
+    // No arrows drawn from any selected field: leave the board alone rather
+    // than dimming everything to no purpose
+    if (edgeColor.size === 0) return none
+
+    const sourceIds = new Set(tracedFields.map((f) => f.nodeId))
+    const involved = new Set<string>([...sourceIds, ...targetHits.keys()])
+
+    // A target reached by more than one traced field is the answer to "do these
+    // reference the same things?", so it gets its own marker colour.
+    const shared = new Set(
+      [...targetHits.entries()].filter(([, hits]) => hits.length > 1).map(([id]) => id)
     )
-    // Nothing drawn from this field yet: leave the board alone rather than
-    // dimming everything to no purpose
-    if (lit.length === 0) return { displayEdges: edges, dimmedNodeIds: null }
 
-    const litIds = new Set(lit.map((e) => e.id))
-    const involved = new Set<string>([tracedField.nodeId, ...lit.map((e) => e.target)])
+    const tint = new Map<string, string>()
+    for (const [target, hits] of targetHits) {
+      tint.set(target, hits.length > 1 ? SHARED_COLOR.line : TRACE_COLORS[hits[0]].line)
+    }
 
     return {
-      displayEdges: edges.map((e) =>
-        litIds.has(e.id)
-          ? {
-              ...e,
-              animated: true,
-              zIndex: 10,
-              style: { ...e.style, stroke: '#1773eb', strokeWidth: 3.5 },
-            }
-          : { ...e, style: { ...e.style, opacity: 0.12 } }
-      ),
+      displayEdges: edges.map((e) => {
+        const ci = edgeColor.get(e.id)
+        if (ci === undefined) return { ...e, style: { ...e.style, opacity: 0.1 } }
+        const isShared = shared.has(e.target)
+        return {
+          ...e,
+          animated: true,
+          zIndex: isShared ? 11 : 10,
+          style: {
+            ...e.style,
+            stroke: TRACE_COLORS[ci].line,
+            strokeWidth: isShared ? 4 : 3,
+          },
+        }
+      }),
       dimmedNodeIds: new Set(
         nodes.filter((n) => n.type === 'contentType' && !involved.has(n.id)).map((n) => n.id)
       ),
+      nodeTint: tint,
+      traceSummary: {
+        fields: perField.map((f) => ({
+          label:
+            (nodes.find((n) => n.id === f.nodeId)?.data as unknown as ContentTypeNodeData | undefined)
+              ?.label ?? f.nodeId,
+          fieldName:
+            (
+              (nodes.find((n) => n.id === f.nodeId)?.data as unknown as ContentTypeNodeData | undefined)
+                ?.fields ?? []
+            ).find((x) => x.id === f.fieldId)?.name ?? 'field',
+          colorIndex: f.colorIndex,
+          targetCount: f.targets.length,
+        })),
+        sharedLabels: [...shared].map(
+          (id) =>
+            (nodes.find((n) => n.id === id)?.data as unknown as ContentTypeNodeData | undefined)
+              ?.label ?? id
+        ),
+      },
     }
   })()
 
-  // The traced field id goes only to the node that owns it, so a card can mark
-  // the active row without every card re-rendering on each trace.
+  // The traced field ids go only to the cards that own them, so a card can mark
+  // its active rows without every card re-rendering on each trace.
   const displayNodes = nodes.map((n) => {
     const dimmed = dimmedNodeIds?.has(n.id)
-    const owns = tracedField?.nodeId === n.id
-    if (!dimmed && !owns) return n
+    const owned = tracedFields.filter((f) => f.nodeId === n.id)
+    const tint = nodeTint?.get(n.id)
+    if (!dimmed && owned.length === 0 && !tint) return n
+
+    const traced: Record<string, string> = {}
+    for (const f of owned) traced[f.fieldId] = TRACE_COLORS[tracedFields.indexOf(f)].line
+
     return {
       ...n,
-      ...(dimmed ? { style: { ...n.style, opacity: 0.35 } } : {}),
-      ...(owns ? { data: { ...n.data, tracedFieldId: tracedField!.fieldId } } : {}),
+      ...(dimmed ? { style: { ...n.style, opacity: 0.3 } } : {}),
+      data: {
+        ...n.data,
+        ...(owned.length ? { tracedFieldColors: traced } : {}),
+        ...(tint ? { traceTargetColor: tint } : {}),
+      },
     }
   })
 
@@ -1310,6 +1393,67 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
           <div style={{ textAlign: 'center', marginTop: 4, fontSize: 11, color: '#6b7280', background: 'white', borderRadius: 4, padding: '2px 6px', display: 'inline-block' }}>
             Click to place · Esc to cancel
           </div>
+        </div>
+      )}
+
+      {/* Trace legend. The shared list is the point of comparing two fields. */}
+      {traceSummary && (
+        <div className="absolute bottom-4 left-4 z-40 bg-white border border-gray-200 rounded-xl shadow-xl p-3 max-w-xs">
+          <div className="flex items-center justify-between gap-3 mb-2">
+            <p className="text-[11px] font-bold text-gray-900">Tracing</p>
+            <button
+              className="text-[11px] text-gray-400 hover:text-gray-700 transition-colors"
+              onClick={() => setTracedFields([])}
+            >
+              Clear
+            </button>
+          </div>
+
+          <div className="space-y-1">
+            {traceSummary.fields.map((f, i) => (
+              <div key={i} className="flex items-center gap-2 text-[11px]">
+                <span
+                  className="flex-shrink-0 rounded"
+                  style={{ width: 10, height: 10, backgroundColor: TRACE_COLORS[f.colorIndex].line }}
+                />
+                <span className="text-gray-700 truncate">
+                  {f.label}.<strong>{f.fieldName}</strong>
+                </span>
+                <span className="text-gray-400 flex-shrink-0 ml-auto">
+                  {f.targetCount === 0 ? 'none' : `${f.targetCount} target${f.targetCount === 1 ? '' : 's'}`}
+                </span>
+              </div>
+            ))}
+          </div>
+
+          {traceSummary.fields.length > 1 && (
+            <div className="mt-2 pt-2 border-t border-gray-100">
+              {traceSummary.sharedLabels.length > 0 ? (
+                <>
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <span
+                      className="flex-shrink-0 rounded"
+                      style={{ width: 10, height: 10, backgroundColor: SHARED_COLOR.line }}
+                    />
+                    <span className="text-[11px] font-medium text-gray-700">
+                      Both reference
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-gray-500 break-words">
+                    {traceSummary.sharedLabels.join(', ')}
+                  </p>
+                </>
+              ) : (
+                <p className="text-[11px] text-gray-500">No targets in common.</p>
+              )}
+            </div>
+          )}
+
+          {traceSummary.fields.length === 1 && (
+            <p className="text-[10px] text-gray-400 mt-2 pt-2 border-t border-gray-100">
+              &#8984;-click another reference field to compare
+            </p>
+          )}
         </div>
       )}
 

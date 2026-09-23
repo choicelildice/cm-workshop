@@ -44,10 +44,16 @@ export interface ContentTypeNodeData {
   onDropField: (nodeId: string, field: Omit<ContentField, 'id'>) => void
   onReorderField: (nodeId: string, fieldId: string, toIndex: number) => void
   onUpdateField: (nodeId: string, fieldId: string, patch: Partial<Omit<ContentField, 'id'>>) => void
-  /** Clicking a reference field traces its arrows; clicking again clears it. */
-  onTraceField: (nodeId: string, fieldId: string) => void
-  /** Set on the card owning the field currently being traced. */
-  tracedFieldId?: string
+  /**
+   * Clicking a reference field traces its arrows; clicking again clears it.
+   * `additive` (Cmd/Ctrl-click) adds to the selection instead of replacing it,
+   * so several fields can be compared at once.
+   */
+  onTraceField: (nodeId: string, fieldId: string, additive: boolean) => void
+  /** Field id -> trace colour, for the rows this card owns. */
+  tracedFieldColors?: Record<string, string>
+  /** Set when this card is a target of a trace; the colour to outline it with. */
+  traceTargetColor?: string
   onRenameType: (nodeId: string, newName: string) => void
   onSetTypeKind: (nodeId: string, kind?: ContentTypeKind) => void
   onSetTypeEmoji: (nodeId: string, emoji?: string) => void
