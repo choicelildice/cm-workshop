@@ -44,6 +44,10 @@ export interface ContentTypeNodeData {
   onDropField: (nodeId: string, field: Omit<ContentField, 'id'>) => void
   onReorderField: (nodeId: string, fieldId: string, toIndex: number) => void
   onUpdateField: (nodeId: string, fieldId: string, patch: Partial<Omit<ContentField, 'id'>>) => void
+  /** Clicking a reference field traces its arrows; clicking again clears it. */
+  onTraceField: (nodeId: string, fieldId: string) => void
+  /** Set on the card owning the field currently being traced. */
+  tracedFieldId?: string
   onRenameType: (nodeId: string, newName: string) => void
   onSetTypeKind: (nodeId: string, kind?: ContentTypeKind) => void
   onSetTypeEmoji: (nodeId: string, emoji?: string) => void
