@@ -19,7 +19,8 @@ export const TOUR_STEPS: TourStep[] = [
     title: 'Welcome to CM Workshop',
     body:
       'Sketch a Contentful content model on a canvas, then push it straight into a space. ' +
-      'This takes about a minute and you can leave at any time.',
+      'This runs on a sample model so there is something real to look at \u2014 one is created ' +
+      'if you don\u2019t have it. Takes about a minute, and you can leave at any time.',
   },
   {
     target: 'add-type',
@@ -47,6 +48,24 @@ export const TOUR_STEPS: TourStep[] = [
     placement: 'top',
   },
   {
+    target: 'canvas',
+    title: 'Follow the references',
+    body:
+      'Click any Reference field to light up where it points and fade everything else. ' +
+      '\u2318-click a second one to compare them: anything both reference is called out, ' +
+      'which is how you spot types doing overlapping jobs.',
+    placement: 'top',
+  },
+  {
+    target: 'arrange',
+    title: 'Arrange untangles it',
+    body:
+      'Lays the model out left to right: types nothing references on the left, flowing to types ' +
+      'that reference nothing. Circular references are drawn dashed and listed, and types with no ' +
+      'references either way are grouped below. Most useful on a model you have just imported.',
+    placement: 'bottom',
+  },
+  {
     target: 'sticky',
     title: 'Capture open questions',
     body:
@@ -71,6 +90,14 @@ export const TOUR_STEPS: TourStep[] = [
     placement: 'bottom',
   },
   {
+    target: 'share',
+    title: 'Send it to someone',
+    body:
+      'Share packs the whole model into a link, so anyone can open a copy without an account. ' +
+      'It is a snapshot rather than a live board, so send a fresh link when the model changes.',
+    placement: 'bottom',
+  },
+  {
     target: 'export',
     title: 'Export when you’re ready',
     body:
@@ -82,8 +109,9 @@ export const TOUR_STEPS: TourStep[] = [
   {
     title: 'A few things worth knowing',
     body:
-      'Everything autosaves to this browser, and Cmd+Z undoes. Use the project menu for separate ' +
-      'boards. You can reopen this tour from the Help button any time.',
+      'Everything autosaves to this browser, and Cmd+Z undoes anything \u2014 including an Arrange. ' +
+      'Use the project menu for separate boards; this sample is just another project, so rename it ' +
+      'and build on it or delete it. Reopen this tour from Help any time.',
   },
 ]
 

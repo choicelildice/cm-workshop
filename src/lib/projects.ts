@@ -159,11 +159,27 @@ export function allImageNodeIds(): Set<string> {
   return ids
 }
 
+/** Finds a project by name, for locating the sample board. */
+export function findProjectByName(name: string): ProjectMeta | undefined {
+  return listProjects().find((p) => p.name === name)
+}
+
+/**
+ * Creates a project with given contents. Used for the sample board; suffixes a
+ * name collision rather than overwriting, like createProjectFromShare.
+ */
+export function createProjectWithData(name: string, data: ProjectData): ProjectMeta {
+  return createProjectFromShare(name, data)
+}
+
 /**
  * Ensures a current project exists, folding any pre-projects board into one.
  * Returns the id to open.
+ *
+ * `sample` is used only when there are genuinely no projects and no legacy
+ * board, so an existing user never has a sample dropped into their list.
  */
-export function ensureCurrentProject(): string {
+export function ensureCurrentProject(sample?: { name: string; data: ProjectData }): string {
   const existing = listProjects()
   const current = getCurrentProjectId()
   if (current && existing.some((p) => p.id === current)) return current
@@ -176,8 +192,9 @@ export function ensureCurrentProject(): string {
   // First run: adopt a legacy single-board layout if one is there
   const legacyNodes = read<unknown[] | null>(LEGACY_NODES, null)
   const legacyEdges = read<unknown[] | null>(LEGACY_EDGES, null)
-  const meta = createProject(legacyNodes?.length ? 'My Content Model' : 'Untitled')
+
   if (legacyNodes?.length) {
+    const meta = createProject('My Content Model')
     write(dataKey(meta.id), { nodes: legacyNodes, edges: legacyEdges ?? [] })
     if (available()) {
       try {
@@ -187,7 +204,16 @@ export function ensureCurrentProject(): string {
         // ignore
       }
     }
+    setCurrentProjectId(meta.id)
+    return meta.id
   }
+
+  // Genuinely empty: start on the sample so there is something to look at,
+  // and so the tour has real cards to point at
+  const meta = sample
+    ? createProject(sample.name)
+    : createProject('Untitled')
+  if (sample) write(dataKey(meta.id), sample.data)
   setCurrentProjectId(meta.id)
   return meta.id
 }
