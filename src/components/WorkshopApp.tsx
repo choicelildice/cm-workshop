@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import dynamic from 'next/dynamic'
-import { ImageIcon, PlusSquare, ExternalLink, Trash2, Settings, UploadCloud, DownloadCloud, StickyNote, HelpCircle, Share2 } from 'lucide-react'
+import { ImageIcon, PlusSquare, ExternalLink, Trash2, Settings, UploadCloud, DownloadCloud, StickyNote, HelpCircle, Share2, Network, X } from 'lucide-react'
 import FieldLibrary from '@/components/FieldLibrary'
 import MiroExportModal from '@/components/MiroExportModal'
 import ContentfulExportModal from '@/components/ContentfulExportModal'
@@ -25,12 +25,13 @@ interface CanvasActions {
   addContentType: (name: string) => void
   addImageNode: (file: File) => void
   addSticky: () => void
+  arrangeBoard: () => { cycles: string[][]; orphans: number }
   clearBoard: () => void
   getExportData: () => { nodes: unknown[]; edges: unknown[] }
   importContentTypes: (types: {
     cmaId: string
     name: string
-    fields: { cmaId: string; name: string; type: string; required: boolean; isArray: boolean; linkTargets: string[] }[]
+    fields: { cmaId: string; name: string; type: string; required: boolean; isArray: boolean; localized?: boolean; linkTargets: string[] }[]
   }[]) => void
 }
 
@@ -46,6 +47,7 @@ export default function WorkshopApp() {
   const [showTour, setShowTour] = useState(false)
   const [showShare, setShowShare] = useState(false)
   const [incoming, setIncoming] = useState<SharePayload | null>(null)
+  const [arrangeNote, setArrangeNote] = useState<{ cycles: string[][]; orphans: number } | null>(null)
   // Resolved on the client only — localStorage isn't available during SSR
   const [projectId, setProjectId] = useState<string | null>(null)
   const [kinds, setKinds] = useState<KindDef[]>(DEFAULT_KINDS)
@@ -195,6 +197,19 @@ export default function WorkshopApp() {
           </button>
         </div>
 
+        {/* Arrange */}
+        <button
+          className="flex items-center gap-1.5 text-base font-semibold text-gray-800 hover:text-blue-700 hover:bg-blue-50 px-3 py-1.5 rounded-lg transition-colors border border-gray-300 hover:border-blue-300"
+          onClick={() => {
+            const result = actionsRef.current?.arrangeBoard()
+            if (result && (result.cycles.length || result.orphans)) setArrangeNote(result)
+          }}
+          title="Lay out content types left to right by reference depth"
+        >
+          <Network size={15} />
+          Arrange
+        </button>
+
         {/* Sticky note */}
         <button
           data-tour="sticky"
@@ -326,6 +341,48 @@ export default function WorkshopApp() {
 
       {showShare && projectId && (
         <ShareModal projectId={projectId} onClose={() => setShowShare(false)} />
+      )}
+
+      {/* What the arrange found. Circular references are usually intentional
+          (Page <-> Section), so this is information rather than a warning. */}
+      {arrangeNote && (
+        <div className="fixed bottom-4 right-4 z-40 w-80 bg-white border border-gray-200 rounded-xl shadow-xl p-4">
+          <button
+            className="absolute top-3 right-3 text-gray-300 hover:text-gray-600 transition-colors"
+            onClick={() => setArrangeNote(null)}
+          >
+            <X size={13} />
+          </button>
+          <p className="text-xs font-bold text-gray-900 mb-2 pr-5">Arranged</p>
+
+          {arrangeNote.cycles.length > 0 && (
+            <div className="mb-2">
+              <p className="text-[11px] text-gray-600 mb-1">
+                {arrangeNote.cycles.length} circular reference
+                {arrangeNote.cycles.length === 1 ? '' : 's'}, drawn dashed:
+              </p>
+              <ul className="space-y-0.5">
+                {arrangeNote.cycles.slice(0, 5).map((path, i) => (
+                  <li key={i} className="text-[11px] text-gray-500 font-mono break-words">
+                    {path.join(' \u2192 ')}
+                  </li>
+                ))}
+              </ul>
+              {arrangeNote.cycles.length > 5 && (
+                <p className="text-[11px] text-gray-400 mt-0.5">
+                  and {arrangeNote.cycles.length - 5} more
+                </p>
+              )}
+            </div>
+          )}
+
+          {arrangeNote.orphans > 0 && (
+            <p className="text-[11px] text-gray-600">
+              {arrangeNote.orphans} type{arrangeNote.orphans === 1 ? '' : 's'} with no references
+              either way, grouped below.
+            </p>
+          )}
+        </div>
       )}
 
       {showTour && <TourGuide onClose={() => setShowTour(false)} />}

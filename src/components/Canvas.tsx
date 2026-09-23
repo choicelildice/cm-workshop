@@ -26,6 +26,7 @@ import { ContentField, ContentTypeNodeData, ImageNodeData, StickyNodeData } from
 import { migrateFieldType, type ContentTypeKind, type KindDef } from '@/lib/field-type-meta'
 import { saveImage, loadImage, deleteImages, listImageIds } from '@/lib/image-store'
 import { snapPosition, NO_GUIDES, type Guides } from '@/lib/snap'
+import { layoutModel, edgeKey, type LayoutEdge } from '@/lib/layout'
 import { DEFAULT_STICKY_COLOR } from '@/lib/sticky-colors'
 import { loadProjectData, saveProjectData, allImageNodeIds } from '@/lib/projects'
 
@@ -38,12 +39,13 @@ interface CanvasProps {
     addContentType: (name: string) => void
     addImageNode: (file: File) => void
     addSticky: () => void
+    arrangeBoard: () => { cycles: string[][]; orphans: number }
     clearBoard: () => void
     getExportData: () => { nodes: unknown[]; edges: unknown[] }
     importContentTypes: (types: {
       cmaId: string
       name: string
-      fields: { cmaId: string; name: string; type: string; required: boolean; isArray: boolean; linkTargets: string[] }[]
+      fields: { cmaId: string; name: string; type: string; required: boolean; isArray: boolean; localized?: boolean; linkTargets: string[] }[]
     }[]) => void
   }) => void
 }
@@ -78,6 +80,23 @@ function FlowControls({
   }, [zoomIn, zoomOut])
 
   return null
+}
+
+
+/**
+ * Estimated card size for layout, since a freshly created node has not been
+ * measured yet. Mirrors ContentTypeNode: auto-width from the title between 200
+ * and 420, header plus a row per field plus the footer.
+ */
+function estimateCardSize(label: string, fieldCount: number): { width: number; height: number } {
+  const TITLE_CH = 7.2      // ~7px per char at the header's bold 12px
+  const CHROME = 92         // padding, emoji slot, hover buttons
+  const width = Math.min(420, Math.max(200, Math.round(label.length * TITLE_CH + CHROME)))
+  const HEADER = 26
+  const ROW = 26
+  const FOOTER = 24
+  const height = HEADER + Math.max(fieldCount, 1) * ROW + FOOTER
+  return { width, height }
 }
 
 const nodeTypes = {
@@ -405,28 +424,24 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
     (types: {
       cmaId: string
       name: string
-      fields: { cmaId: string; name: string; type: string; required: boolean; isArray: boolean; linkTargets: string[] }[]
+      fields: { cmaId: string; name: string; type: string; required: boolean; isArray: boolean; localized?: boolean; linkTargets: string[] }[]
     }[]) => {
       if (!types.length) return
       mark()
 
-      // Start clear of existing content
+      // Placed clear of existing content, to the right of whatever is there
       const existing = nodesRef.current
       const startX = existing.length
-        ? Math.max(...existing.map((n) => n.position.x + (n.measured?.width ?? 220))) + 120
+        ? Math.max(...existing.map((n) => n.position.x + (n.measured?.width ?? 220))) + 160
         : 0
       const startY = existing.length ? Math.min(...existing.map((n) => n.position.y)) : 0
-
-      const COLS = 3
-      const COL_W = 260
-      const ROW_H = 320
 
       // cmaId -> new node id, so edges can be wired after all nodes exist
       const idMap = new Map<string, string>()
       // cmaId -> field cmaId -> generated field id, for edge source handles
       const fieldMap = new Map<string, Map<string, string>>()
 
-      const newNodes: Node[] = types.map((t, i) => {
+      const newNodes: Node[] = types.map((t) => {
         const nodeId = uuidv4()
         idMap.set(t.cmaId, nodeId)
 
@@ -440,6 +455,7 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
             type: migrateFieldType(f.type),
             required: f.required,
             isArray: f.isArray,
+            localized: f.localized,
           }
         })
         fieldMap.set(t.cmaId, fieldIds)
@@ -447,13 +463,38 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
         return {
           id: nodeId,
           type: 'contentType',
-          position: {
-            x: startX + (i % COLS) * COL_W,
-            y: startY + Math.floor(i / COLS) * ROW_H,
-          },
+          // Overwritten by the layered layout below
+          position: { x: 0, y: 0 },
           data: makeContentTypeData(t.name, fields) as unknown as Record<string, unknown>,
         }
       })
+
+      // ── Layered layout ────────────────────────────────────────────────
+      // Types nothing references on the left, flowing right to types that
+      // reference nothing. Reference arrows become the graph edges.
+      const layoutEdges: LayoutEdge[] = []
+      for (const t of types) {
+        const sourceId = idMap.get(t.cmaId)!
+        for (const f of t.fields) {
+          for (const target of f.linkTargets) {
+            const targetId = idMap.get(target)
+            if (targetId) layoutEdges.push({ source: sourceId, target: targetId })
+          }
+        }
+      }
+
+      const sizeById = new Map(
+        types.map((t) => [idMap.get(t.cmaId)!, estimateCardSize(t.name, t.fields.length)])
+      )
+      const layout = layoutModel(
+        newNodes.map((n) => ({ id: n.id, ...sizeById.get(n.id)! })),
+        layoutEdges
+      )
+
+      for (const n of newNodes) {
+        const at = layout.positions.get(n.id)
+        if (at) n.position = { x: startX + at.x, y: startY + at.y }
+      }
 
       const newEdges: Edge[] = []
       for (const t of types) {
@@ -463,13 +504,19 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
           for (const target of f.linkTargets) {
             const targetId = idMap.get(target)
             if (!targetId) continue
+            // A back edge closes a circular reference. Dashed rather than
+            // coloured: a loop is usually intentional (Page <-> Section), so
+            // it is information, not a warning.
+            const isLoop = layout.backEdges.has(edgeKey(sourceId, targetId))
             newEdges.push({
               id: `e-${sourceId}-${fieldIds.get(f.cmaId)}-${targetId}`,
               source: sourceId,
               target: targetId,
               sourceHandle: `field-${fieldIds.get(f.cmaId)}`,
               animated: false,
-              style: { stroke: '#0891B2', strokeWidth: 2 },
+              style: isLoop
+                ? { stroke: '#0891B2', strokeWidth: 2, strokeDasharray: '6 4' }
+                : { stroke: '#0891B2', strokeWidth: 2 },
             })
           }
         }
@@ -585,6 +632,77 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
     }
   }, [isPlacing, placeContentTypeAt, placeImageAt, placeStickyAt])
 
+
+  /**
+   * Re-lays out the content types already on the board, left to right by
+   * reference depth. Sticky notes and images are left where they are: they are
+   * annotations, not part of the graph.
+   *
+   * Returns what it found, so the caller can report circular references.
+   */
+  const arrangeBoard = useCallback((): { cycles: string[][]; orphans: number } => {
+    const all = nodesRef.current
+    const cts = all.filter((n) => n.type === 'contentType')
+    if (cts.length === 0) return { cycles: [], orphans: 0 }
+
+    mark()
+
+    const labelOf = (id: string) =>
+      (all.find((n) => n.id === id)?.data as unknown as ContentTypeNodeData | undefined)?.label ?? id
+
+    // Prefer React Flow's measurement; fall back to an estimate for a card that
+    // has not rendered yet.
+    const sized = cts.map((n) => {
+      const d = n.data as unknown as ContentTypeNodeData
+      const est = estimateCardSize(d.label ?? '', d.fields?.length ?? 0)
+      return {
+        id: n.id,
+        width: n.measured?.width ?? n.width ?? est.width,
+        height: n.measured?.height ?? n.height ?? est.height,
+      }
+    })
+
+    const ctIds = new Set(cts.map((n) => n.id))
+    const layoutEdges: LayoutEdge[] = edgesRef.current
+      .filter((e) => ctIds.has(e.source) && ctIds.has(e.target))
+      .map((e) => ({ source: e.source, target: e.target }))
+
+    const layout = layoutModel(sized, layoutEdges)
+
+    // Anchor the result at the current top-left, so an arrange doesn't jump the
+    // diagram to the origin
+    const originX = Math.min(...cts.map((n) => n.position.x))
+    const originY = Math.min(...cts.map((n) => n.position.y))
+
+    setNodes((nds) =>
+      nds.map((n) => {
+        const at = layout.positions.get(n.id)
+        return at ? { ...n, position: { x: originX + at.x, y: originY + at.y } } : n
+      })
+    )
+
+    // Re-style edges so loops read as dashed here too
+    setEdges((eds) =>
+      eds.map((e) => {
+        if (!ctIds.has(e.source) || !ctIds.has(e.target)) return e
+        const isLoop = layout.backEdges.has(edgeKey(e.source, e.target))
+        return {
+          ...e,
+          style: isLoop
+            ? { stroke: '#0891B2', strokeWidth: 2, strokeDasharray: '6 4' }
+            : { stroke: '#0891B2', strokeWidth: 2 },
+        }
+      })
+    )
+
+    setTimeout(() => fitViewRef.current?.(), 60)
+
+    return {
+      cycles: layout.cycles.map((path) => path.map(labelOf)),
+      orphans: layout.orphanIds.length,
+    }
+  }, [setNodes, setEdges, mark])
+
   const getExportData = useCallback(() => {
     const exportNodes = nodes
       .filter((n) => n.type === 'contentType')
@@ -617,8 +735,8 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
   }, [setNodes, setEdges])
 
   useEffect(() => {
-    onReady({ addContentType, addImageNode, addSticky, clearBoard, getExportData, importContentTypes })
-  }, [onReady, addContentType, addImageNode, addSticky, clearBoard, getExportData, importContentTypes])
+    onReady({ addContentType, addImageNode, addSticky, arrangeBoard, clearBoard, getExportData, importContentTypes })
+  }, [onReady, addContentType, addImageNode, addSticky, arrangeBoard, clearBoard, getExportData, importContentTypes])
 
   const restoredRef = useRef(false)
   const fitViewRef = useRef<(() => void) | null>(null)
