@@ -11,10 +11,15 @@
  */
 
 import { isFieldType, migrateFieldType } from './field-type-meta'
+import { decodeV2, encodeV2 } from './share-v2'
 
 export const SHARE_PREFIX = '#p='
-/** Above this, browsers and chat clients start truncating links. */
-export const URL_WARN_LENGTH = 8000
+/**
+ * Above this, some chat clients and email clients start mangling links. With
+ * the compact v2 format even a 200-type space lands near 2,800 characters, so
+ * reaching this now means something unusual.
+ */
+export const URL_WARN_LENGTH = 12000
 /**
  * Hard caps on untrusted input. A realistic board is ~1.5KB encoded, so 64KB is
  * generous, and both limits together make a zip bomb (gzip reaches ~1000:1)
@@ -100,7 +105,10 @@ export function stripUnshareable(nodes: unknown[]): { nodes: unknown[]; droppedI
 }
 
 export async function encodeShare(payload: SharePayload): Promise<string> {
-  return toBase64Url(await gzip(JSON.stringify(payload)))
+  // v2: ids become array indices, which removes the UUIDs that dominated v1 and
+  // are incompressible. A full customer space goes from ~31k characters to ~1.3k.
+  const wire = encodeV2(payload.name, payload.nodes, payload.edges)
+  return toBase64Url(await gzip(JSON.stringify(wire)))
 }
 
 /** Node types the canvas can render. Anything else is dropped on import. */
@@ -195,7 +203,18 @@ export async function decodeShare(encoded: string): Promise<SharePayload> {
   const json = await gunzip(fromBase64Url(encoded), MAX_DECODED_BYTES)
   const parsed = JSON.parse(json) as unknown
 
-  if (!isPlainObject(parsed) || parsed.v !== 1 || !Array.isArray(parsed.nodes)) {
+  if (!isPlainObject(parsed)) {
+    throw new Error('This link was made by a different version of the app.')
+  }
+
+  // v2 is the compact format. v1 is still decoded so links already sent keep
+  // working — a shared link is out of our hands once it is sent.
+  if (parsed.v === 2) {
+    const board = decodeV2(parsed, () => crypto.randomUUID())
+    return { v: 1, name: board.name, nodes: board.nodes, edges: board.edges }
+  }
+
+  if (parsed.v !== 1 || !Array.isArray(parsed.nodes)) {
     throw new Error('This link was made by a different version of the app.')
   }
 
