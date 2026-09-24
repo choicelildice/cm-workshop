@@ -105,8 +105,8 @@ export default function ShareModal({ projectId, onClose }: Props) {
             {tooLong && (
               <p className="flex items-start gap-1.5 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3">
                 <AlertTriangle size={12} className="mt-0.5 flex-shrink-0" />
-                This link is long enough that some chat apps and email clients may truncate it.
-                Sending it as a plain link rather than pasted text usually survives.
+                This link is long enough that some email clients may mangle it. In Slack or Teams,
+                attach it as a link with short display text rather than pasting the raw URL.
               </p>
             )}
 
