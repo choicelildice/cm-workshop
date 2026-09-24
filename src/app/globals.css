@@ -1,2 +1,28 @@
 @import '@xyflow/react/dist/style.css';
 @import "tailwindcss";
+
+/*
+ * Panning must win over edges.
+ *
+ * React Flow gives every edge `pointer-events: visibleStroke` plus an invisible
+ * 20px-wide "interaction" path to make clicking easier. On a dense model those
+ * bands overlap into a net, and dragging to pan the board only works if you
+ * happen to grab a gap between them.
+ *
+ * Edges are made inert for dragging and kept clickable for selection: the
+ * pointer passes through the stroke, so a drag anywhere pans, while a click
+ * still selects because the narrow hit path below re-enables it.
+ */
+.react-flow__edge {
+  pointer-events: none;
+}
+
+/*
+ * A deliberate click still selects an edge, so a wrong reference can be
+ * selected and deleted. This is the visible 2px stroke only, with no widened
+ * band, so the area that blocks a pan drops from 20px to 2px per edge.
+ */
+.react-flow__edge .react-flow__edge-path {
+  pointer-events: stroke;
+  cursor: pointer;
+}
