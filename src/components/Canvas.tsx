@@ -1320,6 +1320,10 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
         minZoom={0.1}
         maxZoom={8}
         panOnDrag={!isPlacing}
+        /* No invisible 20px hit band around each edge: on a dense model those
+           bands overlap and swallow the drag used to pan the board. Edges stay
+           clickable via their visible stroke (see globals.css). */
+        defaultEdgeOptions={{ interactionWidth: 0 }}
       >
         <FlowControls fitViewRef={fitViewRef} screenToFlowRef={screenToFlowRef} />
 
