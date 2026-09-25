@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { AlertTriangle, Check, Copy, Link2, Loader2, X } from 'lucide-react'
-import { SHARE_PREFIX, URL_WARN_LENGTH, encodeShare, stripUnshareable } from '@/lib/share'
+import { URL_WARN_LENGTH, buildShareUrl, encodeShare, stripUnshareable } from '@/lib/share'
 import { loadProjectData, listProjects } from '@/lib/projects'
 
 interface Props {
@@ -13,6 +13,7 @@ interface Props {
 export default function ShareModal({ projectId, onClose }: Props) {
   const [url, setUrl] = useState<string | null>(null)
   const [droppedImages, setDroppedImages] = useState(0)
+  const [usedBlobStorage, setUsedBlobStorage] = useState(false)
   const [copied, setCopied] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -31,7 +32,9 @@ export default function ShareModal({ projectId, onClose }: Props) {
       }
 
       const encoded = await encodeShare({ v: 1, name, nodes, edges: data.edges ?? [] })
-      setUrl(`${window.location.origin}${window.location.pathname}${SHARE_PREFIX}${encoded}`)
+      const { url: shareUrl, usedBlobStorage: blobbed } = await buildShareUrl(encoded)
+      setUrl(shareUrl)
+      setUsedBlobStorage(blobbed)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not build a link')
     } finally {
@@ -102,7 +105,13 @@ export default function ShareModal({ projectId, onClose }: Props) {
               {url?.length.toLocaleString()} characters
             </p>
 
-            {tooLong && (
+            {usedBlobStorage ? (
+              <p className="flex items-start gap-1.5 text-xs text-blue-700 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2 mb-3">
+                <AlertTriangle size={12} className="mt-0.5 flex-shrink-0" />
+                This model was too large to fit in the link itself, so it was stored and this link
+                points to it. Anyone with the link can open it, same as a normal share link.
+              </p>
+            ) : tooLong && (
               <p className="flex items-start gap-1.5 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3">
                 <AlertTriangle size={12} className="mt-0.5 flex-shrink-0" />
                 This link is long enough that some email clients may mangle it. In Slack or Teams,
