@@ -28,6 +28,8 @@ import { saveImage, loadImage, deleteImages, listImageIds } from '@/lib/image-st
 import { snapPosition, NO_GUIDES, type Guides } from '@/lib/snap'
 import { layoutModel, edgeKey, type LayoutEdge } from '@/lib/layout'
 import { TRACE_COLORS, SHARED_COLOR } from '@/lib/trace-colors'
+import { compareContentTypes } from '@/lib/compare-types'
+import { FIELD_TYPES } from '@/lib/field-types'
 import { DEFAULT_STICKY_COLOR } from '@/lib/sticky-colors'
 import { loadProjectData, saveProjectData, allImageNodeIds } from '@/lib/projects'
 
@@ -166,7 +168,21 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
    */
   const [tracedFields, setTracedFields] = useState<{ nodeId: string; fieldId: string }[]>([])
 
+  /**
+   * Content types selected for structural comparison: zero, one (waiting for
+   * a second pick), or two (the pair the comparison panel is showing).
+   * A single array rather than two pieces of state, so there is exactly one
+   * place that decides what a click does next. Declared before
+   * handleTraceField below, since that handler clears this on use.
+   */
+  const [compareIds, setCompareIds] = useState<string[]>([])
+  const clearCompare = useCallback(() => setCompareIds([]), [])
+  const comparePair = compareIds.length === 2 ? (compareIds as [string, string]) : null
+
   const handleTraceField = useCallback((nodeId: string, fieldId: string, additive: boolean) => {
+    // Tracing and comparing are two different questions about the board and
+    // share the same bottom-left panel slot, so starting one clears the other.
+    setCompareIds([])
     setTracedFields((prev) => {
       const at = prev.findIndex((f) => f.nodeId === nodeId && f.fieldId === fieldId)
 
@@ -178,6 +194,22 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
       // dimming stops meaning anything, so ignore further additions
       if (prev.length >= TRACE_COLORS.length) return prev
       return [...prev, { nodeId, fieldId }]
+    })
+  }, [])
+
+  const handleCompareType = useCallback((nodeId: string) => {
+    // Tracing and comparing are two different questions about the board and
+    // share the same bottom-left panel slot, so starting one clears the other.
+    setTracedFields([])
+    setCompareIds((prev) => {
+      // A pair was showing: any Cmd-click starts a fresh single selection,
+      // rather than trying to extend a finished comparison
+      if (prev.length === 2) return [nodeId]
+      // Nothing selected yet: this is the first pick
+      if (prev.length === 0) return [nodeId]
+      // One already selected: clicking it again cancels; a different card
+      // completes the pair
+      return prev[0] === nodeId ? [] : [prev[0], nodeId]
     })
   }, [])
 
@@ -398,8 +430,9 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
       onSetTypeKind: handleSetTypeKind,
       onSetTypeEmoji: handleSetTypeEmoji,
       onDeleteType: handleDeleteType,
+      onCompareType: handleCompareType,
     }),
-    [clipboard, kinds, handleAddField, handleDeleteField, handleCopyField, handlePasteField, handleDropField, handleReorderField, handleUpdateField, handleTraceField, handleRenameType, handleSetTypeKind, handleSetTypeEmoji, handleDeleteType]
+    [clipboard, kinds, handleAddField, handleDeleteField, handleCopyField, handlePasteField, handleDropField, handleReorderField, handleUpdateField, handleTraceField, handleRenameType, handleSetTypeKind, handleSetTypeEmoji, handleDeleteType, handleCompareType]
   )
 
   // Sync clipboard state to all existing CT nodes
@@ -641,8 +674,10 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
       if (target.closest('.react-flow__controls, .react-flow__minimap, .react-flow__attribution')) return
       const p = placementRef.current
       if (!p) {
-        // Not placing: a bare canvas click clears any active trace
+        // Not placing: a bare canvas click clears any active trace or
+        // pending comparison
         setTracedFields([])
+        clearCompare()
         return
       }
       const pos = screenToFlowRef.current?.({ x: e.clientX, y: e.clientY })
@@ -833,15 +868,16 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
           const {
             onAddField, onDeleteField, onCopyField, onPasteField, onDropField,
             onReorderField, onUpdateField, onTraceField, onRenameType, onSetTypeKind,
-            onSetTypeEmoji, onDeleteType, hasClipboard, kinds: _kinds,
+            onSetTypeEmoji, onDeleteType, onCompareType, hasClipboard, kinds: _kinds,
             // Transient UI state: never persisted. It only ever exists on the
             // render-time copy, but strip it so a future change can't leak it.
-            tracedFieldColors: _tc, traceTargetColor: _ttc, ...rest
+            tracedFieldColors: _tc, traceTargetColor: _ttc, isCompareSelected: _ics, ...rest
           } = n.data as unknown as ContentTypeNodeData
           void onAddField; void onDeleteField; void onCopyField; void onPasteField
           void onDropField; void onReorderField; void onUpdateField; void onRenameType
           void onSetTypeKind; void onSetTypeEmoji; void onDeleteType; void onTraceField
-          void hasClipboard; void _kinds; void _tc; void _ttc
+          void onCompareType
+          void hasClipboard; void _kinds; void _tc; void _ttc; void _ics
           return { ...n, data: rest }
         }
         if (n.type === 'image') {
@@ -1012,8 +1048,9 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
     // undo paste another project's contents in.
     undoStackRef.current = []
     redoStackRef.current = []
-    // A trace names node ids from the outgoing board
+    // A trace or a pending comparison names node ids from the outgoing board
     setTracedFields([])
+    clearCompare()
 
     // Block saving until the incoming board is in memory, so an empty canvas
     // can't overwrite the project we're about to read.
@@ -1076,7 +1113,7 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
   // instead of destroying the selection.
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Escape') { setTracedFields([]); return }
+      if (e.key === 'Escape') { setTracedFields([]); clearCompare(); return }
       if (e.key !== 'Backspace' && e.key !== 'Delete') return
 
       // Never hijack a keystroke meant for a text field
@@ -1289,7 +1326,11 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
     const dimmed = dimmedNodeIds?.has(n.id)
     const owned = tracedFields.filter((f) => f.nodeId === n.id)
     const tint = nodeTint?.get(n.id)
-    if (!dimmed && owned.length === 0 && !tint) return n
+    // A card is "selected" only while waiting for a second pick; once the pair
+    // completes, the panel itself is the indicator and the outline would just
+    // be stale on two cards that may no longer be adjacent after a re-arrange.
+    const compareSelected = compareIds.length === 1 && compareIds[0] === n.id
+    if (!dimmed && owned.length === 0 && !tint && !compareSelected) return n
 
     const traced: Record<string, string> = {}
     for (const f of owned) traced[f.fieldId] = TRACE_COLORS[tracedFields.indexOf(f)].line
@@ -1301,9 +1342,30 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
         ...n.data,
         ...(owned.length ? { tracedFieldColors: traced } : {}),
         ...(tint ? { traceTargetColor: tint } : {}),
+        ...(compareSelected ? { isCompareSelected: true } : {}),
       },
     }
   })
+
+  /**
+   * Structural comparison for the currently selected pair, plus the labels
+   * needed to render it. Recomputed from live node data rather than cached, so
+   * an edit to either card while the panel is open (renaming a field, say)
+   * shows up immediately.
+   */
+  const compareResult = (() => {
+    if (!comparePair) return null
+    const nodeA = nodes.find((n) => n.id === comparePair[0])
+    const nodeB = nodes.find((n) => n.id === comparePair[1])
+    if (!nodeA || !nodeB) return null
+    const dataA = nodeA.data as unknown as ContentTypeNodeData
+    const dataB = nodeB.data as unknown as ContentTypeNodeData
+    return {
+      labelA: dataA.label,
+      labelB: dataB.label,
+      ...compareContentTypes(dataA.fields, dataB.fields),
+    }
+  })()
 
   const placementData = placementRef.current
 
@@ -1465,6 +1527,109 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
               &#8984;-click another reference field to compare
             </p>
           )}
+        </div>
+      )}
+
+      {/* Prompt for the second pick, so a lone Cmd-click doesn't look like it
+          did nothing. */}
+      {compareIds.length === 1 && !comparePair && (
+        <div className="absolute bottom-4 left-4 z-40 bg-white border border-gray-200 rounded-xl shadow-xl px-3 py-2 text-[11px] text-gray-600">
+          &#8984;-click another content type to compare &middot; Esc to cancel
+        </div>
+      )}
+
+      {/* Structural comparison: which fields two content types share, where
+          they differ, and which are unique to each. Aimed at the "do we
+          really need both of these?" question from a model review. */}
+      {compareResult && (
+        <div className="absolute bottom-4 left-4 z-40 bg-white border border-gray-200 rounded-xl shadow-xl p-3 w-96 max-h-[70vh] overflow-y-auto">
+          <div className="flex items-center justify-between gap-3 mb-1">
+            <p className="text-[11px] font-bold text-gray-900 truncate">
+              {compareResult.labelA} <span className="text-gray-400 font-normal">vs</span> {compareResult.labelB}
+            </p>
+            <button
+              className="text-[11px] text-gray-400 hover:text-gray-700 transition-colors flex-shrink-0"
+              onClick={clearCompare}
+            >
+              Clear
+            </button>
+          </div>
+
+          {/* The conclusion, stated up front rather than left for the table to imply. */}
+          <p className="text-[11px] text-gray-600 mb-3">
+            {compareResult.summary.shared} field{compareResult.summary.shared === 1 ? '' : 's'} shared
+            {compareResult.summary.differs > 0 && (
+              <> ({compareResult.summary.differs} differing)</>
+            )}
+            {(compareResult.summary.onlyA > 0 || compareResult.summary.onlyB > 0) && (
+              <>
+                , {compareResult.summary.onlyA} only in {compareResult.labelA}, {compareResult.summary.onlyB} only in {compareResult.labelB}
+              </>
+            )}
+            .
+          </p>
+
+          <div className="space-y-0.5">
+            {compareResult.pairs.map((pair, i) => {
+              const field = pair.a ?? pair.b
+              if (!field) return null
+              const meta = FIELD_TYPES[field.type]
+              const both = pair.a && pair.b
+              return (
+                <div
+                  key={i}
+                  className="grid items-center gap-1.5 text-[11px] py-0.5"
+                  style={{ gridTemplateColumns: '1fr 20px 1fr auto' }}
+                >
+                  {/* A's cell: name + type, or blank if unique to B */}
+                  <div className={`truncate ${pair.a ? 'text-gray-700' : 'text-gray-300 italic'}`}>
+                    {pair.a ? pair.a.name : '—'}
+                  </div>
+
+                  {/* Middle: a coloured swatch for the field's type, plus a
+                      fuzzy-match hint when the names didn't match exactly */}
+                  <div className="flex items-center justify-center" title={meta.label}>
+                    <span
+                      className="rounded"
+                      style={{ width: 8, height: 8, backgroundColor: meta.color }}
+                    />
+                  </div>
+
+                  <div className={`truncate ${pair.b ? 'text-gray-700' : 'text-gray-300 italic'}`}>
+                    {pair.b ? pair.b.name : '—'}
+                  </div>
+
+                  <div className="flex-shrink-0 flex items-center gap-1 justify-end">
+                    {pair.match === 'fuzzy' && (
+                      <span
+                        className="text-[9px] text-amber-600 bg-amber-50 rounded px-1"
+                        title="Names are close but not identical"
+                      >
+                        ~
+                      </span>
+                    )}
+                    {both && pair.differs && (
+                      <span
+                        className="text-[9px] text-red-500 bg-red-50 rounded px-1"
+                        title={[
+                          pair.differs.type && 'different type',
+                          pair.differs.isArray && 'list mismatch',
+                          pair.differs.localized && 'localization mismatch',
+                        ].filter(Boolean).join(', ')}
+                      >
+                        differs
+                      </span>
+                    )}
+                    {!both && (
+                      <span className="text-[9px] text-gray-400">
+                        {pair.a ? compareResult.labelA : compareResult.labelB}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
         </div>
       )}
 

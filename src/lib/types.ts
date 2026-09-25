@@ -58,6 +58,13 @@ export interface ContentTypeNodeData {
   onSetTypeKind: (nodeId: string, kind?: ContentTypeKind) => void
   onSetTypeEmoji: (nodeId: string, emoji?: string) => void
   onDeleteType: (nodeId: string) => void
+  /**
+   * Cmd/Ctrl-click a card header to select it for comparison. A second
+   * Cmd-click on a different card compares them; on the same card, clears it.
+   */
+  onCompareType: (nodeId: string) => void
+  /** True while this card is the lone selection, waiting for a second pick. */
+  isCompareSelected?: boolean
 }
 
 export interface ImageNodeData {
