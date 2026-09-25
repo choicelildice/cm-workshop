@@ -29,6 +29,7 @@ import { snapPosition, NO_GUIDES, type Guides } from '@/lib/snap'
 import { layoutModel, edgeKey, type LayoutEdge } from '@/lib/layout'
 import { TRACE_COLORS, SHARED_COLOR } from '@/lib/trace-colors'
 import { compareContentTypes } from '@/lib/compare-types'
+import DeleteTypeConfirm, { type PendingDelete } from '@/components/DeleteTypeConfirm'
 import { FIELD_TYPES } from '@/lib/field-types'
 import { DEFAULT_STICKY_COLOR } from '@/lib/sticky-colors'
 import { loadProjectData, saveProjectData, allImageNodeIds } from '@/lib/projects'
@@ -266,13 +267,81 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
     [setNodes, mark]
   )
 
-  const handleDeleteType = useCallback(
-    (nodeId: string) => {
+  /**
+   * Prompt shown before deleting content type(s) that carry real work.
+   * Populated just before showing, then consumed by confirm/cancel.
+   */
+  const [pendingDelete, setPendingDelete] = useState<{
+    nodeIds: Set<string>
+    edgeIds: Set<string>
+    summary: PendingDelete
+  } | null>(null)
+
+  /** The actual removal, once a delete (confirmed or auto-approved) is decided. */
+  const deleteNodesNow = useCallback(
+    (nodeIds: Set<string>, edgeIds: Set<string> = new Set()) => {
       mark()
-      setNodes((nds) => nds.filter((n) => n.id !== nodeId))
-      setEdges((eds) => eds.filter((e) => e.source !== nodeId && e.target !== nodeId))
+      setNodes((nds) => nds.filter((n) => !nodeIds.has(n.id)))
+      setEdges((eds) =>
+        eds.filter(
+          (e) => !edgeIds.has(e.id) && !nodeIds.has(e.source) && !nodeIds.has(e.target)
+        )
+      )
     },
     [setNodes, setEdges, mark]
+  )
+
+  /**
+   * Decides whether a batch of nodes needs confirmation before deleting, and
+   * either deletes immediately (nothing of substance in it) or opens the
+   * prompt. Both the header trash button and the keyboard shortcut go
+   * through this, so "worth confirming" is decided in exactly one place.
+   */
+  const requestDelete = useCallback(
+    (nodeIds: Set<string>, edgeIds: Set<string> = new Set()) => {
+      const all = nodesRef.current
+      const cts = all.filter((n) => nodeIds.has(n.id) && n.type === 'contentType')
+      const others = [...nodeIds].length - cts.length
+
+      const touchingEdges = new Set(edgeIds)
+      for (const e of edgesRef.current) {
+        if (nodeIds.has(e.source) || nodeIds.has(e.target)) touchingEdges.add(e.id)
+      }
+
+      const types = cts.map((n) => {
+        const d = n.data as unknown as ContentTypeNodeData
+        return { label: d.label, fieldCount: d.fields?.length ?? 0 }
+      })
+      const totalFields = types.reduce((n, t) => n + t.fieldCount, 0)
+
+      // Nothing to lose: an empty, unconnected content type (or a batch of
+      // only stickies/images) deletes immediately. A prompt on every delete
+      // would just train people to click through it without reading.
+      if (types.length === 0 || (totalFields === 0 && touchingEdges.size === 0)) {
+        deleteNodesNow(nodeIds, touchingEdges)
+        return
+      }
+
+      setPendingDelete({
+        nodeIds,
+        edgeIds: touchingEdges,
+        summary: { types, edgeCount: touchingEdges.size, otherCount: others },
+      })
+    },
+    [deleteNodesNow]
+  )
+
+  const confirmPendingDelete = useCallback(() => {
+    if (!pendingDelete) return
+    deleteNodesNow(pendingDelete.nodeIds, pendingDelete.edgeIds)
+    setPendingDelete(null)
+  }, [pendingDelete, deleteNodesNow])
+
+  const cancelPendingDelete = useCallback(() => setPendingDelete(null), [])
+
+  const handleDeleteType = useCallback(
+    (nodeId: string) => requestDelete(new Set([nodeId])),
+    [requestDelete]
   )
 
   const handleDeleteImage = useCallback(
@@ -675,9 +744,10 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
       const p = placementRef.current
       if (!p) {
         // Not placing: a bare canvas click clears any active trace or
-        // pending comparison
+        // pending comparison or delete prompt
         setTracedFields([])
         clearCompare()
+        cancelPendingDelete()
         return
       }
       const pos = screenToFlowRef.current?.({ x: e.clientX, y: e.clientY })
@@ -699,7 +769,7 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
       window.removeEventListener('keydown', onKeyDown)
       window.removeEventListener('mousedown', onMouseDownCapture, true)
     }
-  }, [isPlacing, placeContentTypeAt, placeImageAt, placeStickyAt])
+  }, [isPlacing, placeContentTypeAt, placeImageAt, placeStickyAt, clearCompare, cancelPendingDelete])
 
 
   /**
@@ -1048,9 +1118,11 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
     // undo paste another project's contents in.
     undoStackRef.current = []
     redoStackRef.current = []
-    // A trace or a pending comparison names node ids from the outgoing board
+    // A trace, a pending comparison, or an open delete prompt all name node
+    // ids from the outgoing board
     setTracedFields([])
     clearCompare()
+    cancelPendingDelete()
 
     // Block saving until the incoming board is in memory, so an empty canvas
     // can't overwrite the project we're about to read.
@@ -1102,7 +1174,7 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
 
     load()
     return () => { cancelled = true }
-  }, [projectId, makeContentTypeData, handleDeleteImage, makeStickyData, setNodes, setEdges, serializeNodes])
+  }, [projectId, makeContentTypeData, handleDeleteImage, makeStickyData, setNodes, setEdges, serializeNodes, clearCompare, cancelPendingDelete])
 
   // Delete selected nodes/edges.
   //
@@ -1113,7 +1185,7 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
   // instead of destroying the selection.
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Escape') { setTracedFields([]); clearCompare(); return }
+      if (e.key === 'Escape') { setTracedFields([]); clearCompare(); cancelPendingDelete(); return }
       if (e.key !== 'Backspace' && e.key !== 'Delete') return
 
       // Never hijack a keystroke meant for a text field
@@ -1131,19 +1203,16 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
       if (nodeIds.size === 0 && edgeIds.size === 0) return
 
       e.preventDefault()
-      pushHistoryRef.current()
-      setNodes((nds) => nds.filter((n) => !nodeIds.has(n.id)))
-      // Drop selected edges, and any edge left dangling by a deleted node
-      setEdges((eds) =>
-        eds.filter(
-          (ed) => !edgeIds.has(ed.id) && !nodeIds.has(ed.source) && !nodeIds.has(ed.target)
-        )
-      )
+      // requestDelete decides whether this needs confirming (a content type
+      // carrying fields or connections) or can go straight through (edges,
+      // stickies, images, an empty content type) — it calls mark() itself,
+      // so there is no separate history push here.
+      requestDelete(nodeIds, edgeIds)
     }
 
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [setNodes, setEdges])
+  }, [requestDelete, clearCompare, cancelPendingDelete])
 
   // Flush on tab close. Saves are debounced 400ms, so a change made just
   // before closing would otherwise never reach storage.
@@ -1638,6 +1707,14 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
           nodeId={addFieldTarget}
           onAdd={handleFieldAdded}
           onClose={() => setAddFieldTarget(null)}
+        />
+      )}
+
+      {pendingDelete && (
+        <DeleteTypeConfirm
+          pending={pendingDelete.summary}
+          onConfirm={confirmPendingDelete}
+          onCancel={cancelPendingDelete}
         />
       )}
     </div>
