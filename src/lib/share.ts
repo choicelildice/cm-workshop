@@ -14,6 +14,8 @@ import { isFieldType, migrateFieldType } from './field-type-meta'
 import { decodeV2, encodeV2 } from './share-v2'
 
 export const SHARE_PREFIX = '#p='
+/** A blob-backed link carries only its id, in this query param. */
+export const SHARE_BLOB_PARAM = 's'
 /**
  * Above this, some chat clients and email clients start mangling links. With
  * the compact v2 format even a 200-type space lands near 2,800 characters, so
@@ -23,9 +25,9 @@ export const URL_WARN_LENGTH = 12000
 /**
  * Hard caps on untrusted input. A realistic board is ~1.5KB encoded, so 64KB is
  * generous, and both limits together make a zip bomb (gzip reaches ~1000:1)
- * unable to exhaust memory.
+ * unable to exhaust memory. Also the request-body cap for /api/share.
  */
-const MAX_ENCODED_LENGTH = 64 * 1024
+export const MAX_ENCODED_LENGTH = 64 * 1024
 const MAX_DECODED_BYTES = 4 * 1024 * 1024
 
 export interface SharePayload {
@@ -109,6 +111,47 @@ export async function encodeShare(payload: SharePayload): Promise<string> {
   // are incompressible. A full customer space goes from ~31k characters to ~1.3k.
   const wire = encodeV2(payload.name, payload.nodes, payload.edges)
   return toBase64Url(await gzip(JSON.stringify(wire)))
+}
+
+/**
+ * Large models (100+ types with a dense reference graph) still overflow even
+ * the compact v2 fragment. Past this point the encoded string is uploaded to
+ * blob storage instead, and the link carries a URL to it rather than the data
+ * itself. Chosen well under URL_WARN_LENGTH so the fragment path never gets
+ * close enough to matter in practice.
+ */
+export const BLOB_FALLBACK_LENGTH = 6000
+
+export interface ShareLink {
+  url: string
+  /** Whether the model had to be stored server-side rather than fitting in the link itself. */
+  usedBlobStorage: boolean
+}
+
+/**
+ * Builds the link to share, uploading to blob storage first when the encoded
+ * board is too large for a fragment. The upload is a short-lived, unlisted
+ * text blob containing nothing but the same gzipped payload the fragment
+ * would otherwise carry — no board is easier to find or list this way than
+ * it already was as a link.
+ */
+export async function buildShareUrl(encoded: string): Promise<ShareLink> {
+  const base = `${window.location.origin}${window.location.pathname}`
+  if (encoded.length <= BLOB_FALLBACK_LENGTH) {
+    return { url: `${base}${SHARE_PREFIX}${encoded}`, usedBlobStorage: false }
+  }
+
+  const res = await fetch('/api/share', {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain' },
+    body: encoded,
+  })
+  if (!res.ok) {
+    const detail = await res.json().catch(() => null)
+    throw new Error(detail?.error || 'Could not store this model for sharing.')
+  }
+  const { url: blobUrl } = (await res.json()) as { url: string }
+  return { url: `${base}?${SHARE_BLOB_PARAM}=${encodeURIComponent(blobUrl)}`, usedBlobStorage: true }
 }
 
 /** Node types the canvas can render. Anything else is dropped on import. */
@@ -237,15 +280,38 @@ export async function decodeShare(encoded: string): Promise<SharePayload> {
   }
 }
 
-/** Reads and clears a shared board from the current URL, if there is one. */
-export function readShareFromUrl(): string | null {
+/**
+ * Reads a shared board's encoded payload from the current URL, if there is
+ * one — either inline in the fragment, or fetched from blob storage when the
+ * link used the `?s=` fallback. Only a `*.public.blob.vercel-storage.com` URL
+ * is ever fetched: the query param is attacker-controlled input, and without
+ * this the app would happily fetch any URL a crafted link pointed it at.
+ */
+export async function readShareFromUrl(): Promise<string | null> {
   if (typeof window === 'undefined') return null
+
   const hash = window.location.hash
-  if (!hash.startsWith(SHARE_PREFIX)) return null
-  return hash.slice(SHARE_PREFIX.length)
+  if (hash.startsWith(SHARE_PREFIX)) return hash.slice(SHARE_PREFIX.length)
+
+  const blobParam = new URLSearchParams(window.location.search).get(SHARE_BLOB_PARAM)
+  if (!blobParam) return null
+
+  let blobUrl: URL
+  try {
+    blobUrl = new URL(blobParam)
+  } catch {
+    return null
+  }
+  if (blobUrl.protocol !== 'https:' || !blobUrl.hostname.endsWith('.public.blob.vercel-storage.com')) {
+    return null
+  }
+
+  const res = await fetch(blobUrl.toString())
+  if (!res.ok) throw new Error('This link has expired or no longer exists.')
+  return res.text()
 }
 
 export function clearShareFromUrl(): void {
   if (typeof window === 'undefined') return
-  window.history.replaceState({}, '', window.location.pathname + window.location.search)
+  window.history.replaceState({}, '', window.location.pathname)
 }

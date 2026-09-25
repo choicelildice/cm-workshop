@@ -59,18 +59,14 @@ export default function WorkshopApp() {
     setKinds(loadKinds())
 
     // A share link takes precedence over the tour, so the two never stack
-    const encoded = readShareFromUrl()
-    if (encoded) {
-      decodeShare(encoded)
-        .then(setIncoming)
-        .catch(() => {
-          // A corrupt or truncated link shouldn't leave a dead fragment behind
-          clearShareFromUrl()
-        })
-      return
-    }
-    // First visit only; the Help button reopens it afterwards
-    if (!hasSeenTour()) setShowTour(true)
+    readShareFromUrl().then((encoded) => {
+      if (!encoded) {
+        // First visit only; the Help button reopens it afterwards
+        if (!hasSeenTour()) setShowTour(true)
+        return
+      }
+      decodeShare(encoded).then(setIncoming).catch(clearShareFromUrl)
+    }).catch(clearShareFromUrl) // e.g. the blob link expired or the fetch failed
   }, [])
 
 
