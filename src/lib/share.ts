@@ -130,10 +130,9 @@ export interface ShareLink {
 
 /**
  * Builds the link to share, uploading to blob storage first when the encoded
- * board is too large for a fragment. The upload is a short-lived, unlisted
- * text blob containing nothing but the same gzipped payload the fragment
- * would otherwise carry — no board is easier to find or list this way than
- * it already was as a link.
+ * board is too large for a fragment. The upload is a private blob — readable
+ * only through this app's own login-gated /api/share route, not by anyone who
+ * happens to obtain the storage URL by other means.
  */
 export async function buildShareUrl(encoded: string): Promise<ShareLink> {
   const base = `${window.location.origin}${window.location.pathname}`
@@ -150,8 +149,8 @@ export async function buildShareUrl(encoded: string): Promise<ShareLink> {
     const detail = await res.json().catch(() => null)
     throw new Error(detail?.error || 'Could not store this model for sharing.')
   }
-  const { url: blobUrl } = (await res.json()) as { url: string }
-  return { url: `${base}?${SHARE_BLOB_PARAM}=${encodeURIComponent(blobUrl)}`, usedBlobStorage: true }
+  const { id } = (await res.json()) as { id: string }
+  return { url: `${base}?${SHARE_BLOB_PARAM}=${id}`, usedBlobStorage: true }
 }
 
 /** Node types the canvas can render. Anything else is dropped on import. */
@@ -282,10 +281,10 @@ export async function decodeShare(encoded: string): Promise<SharePayload> {
 
 /**
  * Reads a shared board's encoded payload from the current URL, if there is
- * one — either inline in the fragment, or fetched from blob storage when the
- * link used the `?s=` fallback. Only a `*.public.blob.vercel-storage.com` URL
- * is ever fetched: the query param is attacker-controlled input, and without
- * this the app would happily fetch any URL a crafted link pointed it at.
+ * one — either inline in the fragment, or fetched through /api/share when the
+ * link used the `?s=` fallback. That route re-checks the session cookie, so a
+ * recipient with a valid link still needs a valid login, same as every other
+ * board operation.
  */
 export async function readShareFromUrl(): Promise<string | null> {
   if (typeof window === 'undefined') return null
@@ -293,20 +292,10 @@ export async function readShareFromUrl(): Promise<string | null> {
   const hash = window.location.hash
   if (hash.startsWith(SHARE_PREFIX)) return hash.slice(SHARE_PREFIX.length)
 
-  const blobParam = new URLSearchParams(window.location.search).get(SHARE_BLOB_PARAM)
-  if (!blobParam) return null
+  const id = new URLSearchParams(window.location.search).get(SHARE_BLOB_PARAM)
+  if (!id) return null
 
-  let blobUrl: URL
-  try {
-    blobUrl = new URL(blobParam)
-  } catch {
-    return null
-  }
-  if (blobUrl.protocol !== 'https:' || !blobUrl.hostname.endsWith('.public.blob.vercel-storage.com')) {
-    return null
-  }
-
-  const res = await fetch(blobUrl.toString())
+  const res = await fetch(`/api/share?id=${encodeURIComponent(id)}`)
   if (!res.ok) throw new Error('This link has expired or no longer exists.')
   return res.text()
 }
