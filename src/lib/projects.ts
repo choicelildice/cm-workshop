@@ -165,6 +165,17 @@ export function createProjectFromShare(name: string, data: ProjectData): Project
   return meta
 }
 
+/**
+ * Overwrites an EXISTING project's board with shared data, keeping its id
+ * (and so its place in the project list). For when a recipient opens the same
+ * link twice and wants the reopened link to update their existing copy
+ * instead of piling up another "(2)" project. This is an explicit user choice
+ * made in ShareOpenPrompt, never an automatic behaviour.
+ */
+export function replaceProjectFromShare(id: string, data: ProjectData): void {
+  saveProjectData(id, data)
+}
+
 export function getCurrentProjectId(): string | null {
   if (!available()) return null
   try {

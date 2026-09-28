@@ -16,7 +16,7 @@ import { buildSampleModel, SAMPLE_PROJECT_NAME } from '@/lib/sample-model'
 import ShareModal from '@/components/ShareModal'
 import ShareOpenPrompt from '@/components/ShareOpenPrompt'
 import { clearShareFromUrl, decodeShare, readShareFromUrl, type SharePayload } from '@/lib/share'
-import { createProjectFromShare } from '@/lib/projects'
+import { createProjectFromShare, replaceProjectFromShare } from '@/lib/projects'
 import TourGuide from '@/components/TourGuide'
 import { DEFAULT_KINDS, type KindDef } from '@/lib/field-type-meta'
 
@@ -75,16 +75,35 @@ export default function WorkshopApp() {
     setProjectId(id)
   }, [])
 
-  const acceptShare = useCallback(() => {
+  // When a share link's board name matches a project the recipient already
+  // has, they most likely opened the same link before. Offer to update that
+  // one in place rather than always piling up a "(2)", "(3)", …
+  const existingShareTarget = incoming ? findProjectByName(incoming.name) : undefined
+
+  // Bumped on overwrite to force Canvas to remount and reload from storage.
+  // Without this, overwriting the project that's already open wouldn't
+  // change `projectId`, so Canvas's own load effect would never re-fire —
+  // its in-memory board would still be the old one, and the next autosave
+  // would silently write it back over the overwrite that just happened.
+  const [canvasResetKey, setCanvasResetKey] = useState(0)
+
+  const acceptShare = useCallback((mode: 'new' | 'overwrite' = 'new') => {
     if (!incoming) return
-    const meta = createProjectFromShare(incoming.name, {
-      nodes: incoming.nodes,
-      edges: incoming.edges,
-    })
+    const data = { nodes: incoming.nodes, edges: incoming.edges }
+    if (mode === 'overwrite' && existingShareTarget) {
+      replaceProjectFromShare(existingShareTarget.id, data)
+      clearShareFromUrl()
+      setIncoming(null)
+      const wasAlreadyOpen = existingShareTarget.id === projectId
+      switchProject(existingShareTarget.id)
+      if (wasAlreadyOpen) setCanvasResetKey((k) => k + 1)
+      return
+    }
+    const meta = createProjectFromShare(incoming.name, data)
     clearShareFromUrl()
     setIncoming(null)
     switchProject(meta.id)
-  }, [incoming, switchProject])
+  }, [incoming, existingShareTarget, projectId, switchProject])
 
   /**
    * Puts the sample board in front of the tour. It is the first-run project, so
@@ -345,7 +364,9 @@ export default function WorkshopApp() {
           name={incoming.name}
           typeCount={incoming.nodes.filter((n) => (n as { type?: string }).type === 'contentType').length}
           stickyCount={incoming.nodes.filter((n) => (n as { type?: string }).type === 'sticky').length}
-          onOpen={acceptShare}
+          existingProjectName={existingShareTarget?.name}
+          onOpenAsNew={() => acceptShare('new')}
+          onOverwrite={existingShareTarget ? () => acceptShare('overwrite') : undefined}
           onDismiss={dismissShare}
         />
       )}
@@ -434,7 +455,9 @@ export default function WorkshopApp() {
           <FieldLibrary />
         </div>
         <div className="flex-1 overflow-hidden" data-tour="canvas">
-          {projectId && <Canvas projectId={projectId} kinds={kinds} onReady={handleCanvasReady} />}
+          {projectId && (
+            <Canvas key={canvasResetKey} projectId={projectId} kinds={kinds} onReady={handleCanvasReady} />
+          )}
         </div>
       </div>
     </div>
