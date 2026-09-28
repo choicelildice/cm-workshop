@@ -2,9 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import dynamic from 'next/dynamic'
-import { ImageIcon, PlusSquare, ExternalLink, Trash2, Settings, UploadCloud, DownloadCloud, StickyNote, HelpCircle, Share2, Network, X } from 'lucide-react'
+import { ImageIcon, PlusSquare, Trash2, Settings, UploadCloud, DownloadCloud, StickyNote, HelpCircle, Share2, Network, Image as ImageDownloadIcon, ChevronDown, X } from 'lucide-react'
 import FieldLibrary from '@/components/FieldLibrary'
-import MiroExportModal from '@/components/MiroExportModal'
 import ContentfulExportModal from '@/components/ContentfulExportModal'
 import ContentfulImportModal from '@/components/ContentfulImportModal'
 import ProjectMenu from '@/components/ProjectMenu'
@@ -29,6 +28,7 @@ interface CanvasActions {
   arrangeBoard: () => { cycles: string[][]; orphans: number }
   clearBoard: () => void
   getExportData: () => { nodes: unknown[]; edges: unknown[] }
+  exportImage: () => Promise<void>
   importContentTypes: (types: {
     cmaId: string
     name: string
@@ -39,14 +39,16 @@ interface CanvasActions {
 export default function WorkshopApp() {
   const actionsRef = useRef<CanvasActions | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const shareMenuRef = useRef<HTMLDivElement>(null)
 
   const [typeName, setTypeName] = useState('')
   const [confirmClear, setConfirmClear] = useState(false)
-  const [showMiroExport, setShowMiroExport] = useState(false)
   const [showCfExport, setShowCfExport] = useState(false)
   const [showCfImport, setShowCfImport] = useState(false)
   const [showTour, setShowTour] = useState(false)
-  const [showShare, setShowShare] = useState(false)
+  const [showShareMenu, setShowShareMenu] = useState(false)
+  const [showShareModal, setShowShareModal] = useState(false)
+  const [imageExportError, setImageExportError] = useState<string | null>(null)
   const [incoming, setIncoming] = useState<SharePayload | null>(null)
   const [arrangeNote, setArrangeNote] = useState<{ cycles: string[][]; orphans: number } | null>(null)
   // Resolved on the client only — localStorage isn't available during SSR
@@ -122,29 +124,29 @@ export default function WorkshopApp() {
     setIncoming(null)
   }, [])
 
-  // Catch the OAuth callback token and open the export modal. The token arrives
-  // in the fragment rather than a query param so it is never sent to the server
-  // (see the comment in api/miro/callback).
-  useEffect(() => {
-    const hash = window.location.hash
-    // Share links also use the fragment, so only handle a miro_* one here
-    if (!hash.startsWith('#miro_token=') && !hash.startsWith('#miro_error=')) return
-
-    const params = new URLSearchParams(hash.slice(1))
-    const token = params.get('miro_token')
-    // Clear the fragment either way, so a reload can't replay it
-    window.history.replaceState({}, '', window.location.pathname + window.location.search)
-
-    if (token) {
-      try { localStorage.setItem('miro-token', token) } catch {}
+  const handleExportImage = useCallback(async () => {
+    setShowShareMenu(false)
+    setImageExportError(null)
+    try {
+      await actionsRef.current?.exportImage()
+    } catch (err) {
+      setImageExportError(err instanceof Error ? err.message : 'Could not export the board as an image.')
     }
-    // Reopen the modal on success and on failure, so a failed connect is visible
-    setShowMiroExport(true)
   }, [])
 
   const handleCanvasReady = useCallback((actions: CanvasActions) => {
     actionsRef.current = actions
   }, [])
+
+  // Close the Share dropdown on an outside click, same pattern as ProjectMenu.
+  useEffect(() => {
+    if (!showShareMenu) return
+    function onDown(e: MouseEvent) {
+      if (!shareMenuRef.current?.contains(e.target as globalThis.Node)) setShowShareMenu(false)
+    }
+    window.addEventListener('mousedown', onDown)
+    return () => window.removeEventListener('mousedown', onDown)
+  }, [showShareMenu])
 
   function commitAddType() {
     const name = typeName.trim()
@@ -297,15 +299,35 @@ export default function WorkshopApp() {
         )}
 
         {/* Share */}
-        <button
-          className="flex items-center gap-1.5 text-base font-medium text-gray-600 hover:text-blue-700 hover:bg-blue-50 px-3 py-1.5 rounded-lg transition-colors"
-          onClick={() => setShowShare(true)}
-          data-tour="share"
-          title="Share this board via a link"
-        >
-          <Share2 size={14} />
-          Share
-        </button>
+        <div className="relative" ref={shareMenuRef}>
+          <button
+            className="flex items-center gap-1.5 text-base font-medium text-gray-600 hover:text-blue-700 hover:bg-blue-50 px-3 py-1.5 rounded-lg transition-colors"
+            onClick={() => setShowShareMenu((v) => !v)}
+            data-tour="share"
+            title="Share this board"
+          >
+            <Share2 size={14} />
+            Share
+            <ChevronDown size={12} className="text-gray-400" />
+          </button>
+
+          {showShareMenu && (
+            <div className="absolute left-0 top-full mt-1 w-56 bg-white border border-gray-200 rounded-xl shadow-xl z-50 py-1.5">
+              <button
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-left text-gray-700 hover:bg-gray-50 transition-colors"
+                onClick={() => { setShowShareMenu(false); setShowShareModal(true) }}
+              >
+                <Share2 size={13} className="text-gray-400" /> Generate share link
+              </button>
+              <button
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-left text-gray-700 hover:bg-gray-50 transition-colors"
+                onClick={handleExportImage}
+              >
+                <ImageDownloadIcon size={13} className="text-gray-400" /> Export to PNG
+              </button>
+            </div>
+          )}
+        </div>
 
         {/* Tour */}
         <button
@@ -349,15 +371,16 @@ export default function WorkshopApp() {
           To Contentful
         </button>
 
-        {/* Export to Miro */}
-        <button
-          className="flex items-center gap-1.5 text-base font-semibold text-gray-800 hover:text-blue-700 hover:bg-blue-50 px-3 py-1.5 rounded-lg transition-colors border border-gray-300 hover:border-blue-300"
-          onClick={() => setShowMiroExport(true)}
-        >
-          <ExternalLink size={14} />
-          Export to Miro
-        </button>
       </div>
+
+      {imageExportError && (
+        <div className="fixed bottom-4 right-4 z-50 flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-3 py-2 shadow-lg">
+          {imageExportError}
+          <button className="text-red-400 hover:text-red-600" onClick={() => setImageExportError(null)}>
+            <X size={13} />
+          </button>
+        </div>
+      )}
 
       {incoming && (
         <ShareOpenPrompt
@@ -371,8 +394,8 @@ export default function WorkshopApp() {
         />
       )}
 
-      {showShare && projectId && (
-        <ShareModal projectId={projectId} onClose={() => setShowShare(false)} />
+      {showShareModal && projectId && (
+        <ShareModal projectId={projectId} onClose={() => setShowShareModal(false)} />
       )}
 
       {/* What the arrange found. Circular references are usually intentional
@@ -438,14 +461,6 @@ export default function WorkshopApp() {
         <ContentfulExportModal
           getExportData={() => actionsRef.current?.getExportData() ?? { nodes: [], edges: [] }}
           onClose={() => setShowCfExport(false)}
-        />
-      )}
-
-      {showMiroExport && (
-        <MiroExportModal
-          getExportData={() => actionsRef.current?.getExportData() ?? { nodes: [], edges: [] }}
-          kinds={kinds}
-          onClose={() => setShowMiroExport(false)}
         />
       )}
 

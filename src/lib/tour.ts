@@ -70,7 +70,7 @@ export const TOUR_STEPS: TourStep[] = [
     title: 'Capture open questions',
     body:
       'Sticky notes hold the things you haven’t decided yet. Double-click to type, ' +
-      'drag a corner to resize. They travel to Miro but are ignored by Contentful.',
+      'drag a corner to resize. They show up in a PNG export but are ignored by Contentful.',
     placement: 'bottom',
   },
   {
@@ -93,8 +93,9 @@ export const TOUR_STEPS: TourStep[] = [
     target: 'share',
     title: 'Send it to someone',
     body:
-      'Share packs the whole model into a link, so anyone can open a copy without an account. ' +
-      'It is a snapshot rather than a live board, so send a fresh link when the model changes.',
+      'Generate a share link to pack the whole model into a link, so anyone can open their own copy ' +
+      'without an account — a snapshot, not a live board, so send a fresh link when the model ' +
+      'changes. Export to PNG makes an image of the board instead, for a doc or a deck.',
     placement: 'bottom',
   },
   {

@@ -12,11 +12,14 @@ import {
   useEdgesState,
   useReactFlow,
   ViewportPortal,
+  getNodesBounds,
+  getViewportForBounds,
   Connection,
   Node,
   NodeChange,
   Edge,
 } from '@xyflow/react'
+import { toPng } from 'html-to-image'
 import { v4 as uuidv4 } from 'uuid'
 import ContentTypeNode from './nodes/ContentTypeNode'
 import ImageNode from './nodes/ImageNode'
@@ -46,6 +49,7 @@ interface CanvasProps {
     arrangeBoard: () => { cycles: string[][]; orphans: number }
     clearBoard: () => void
     getExportData: () => { nodes: unknown[]; edges: unknown[] }
+    exportImage: () => Promise<void>
     importContentTypes: (types: {
       cmaId: string
       name: string
@@ -865,6 +869,48 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
     return { nodes: exportNodes, edges: exportEdges, stickies }
   }, [nodes, edges])
 
+  /**
+   * Renders the board to a PNG and downloads it. Frames a viewport around
+   * every node's real (measured) bounds rather than exporting whatever is
+   * currently on screen, so the image is the whole board regardless of scroll
+   * or zoom, and re-applies the live viewport transform afterwards so the
+   * canvas the user sees is untouched.
+   */
+  const exportImage = useCallback(async () => {
+    const current = nodesRef.current
+    if (current.length === 0) throw new Error('This board is empty, so there is nothing to export.')
+
+    const viewportEl = containerRef.current?.querySelector<HTMLElement>('.react-flow__viewport')
+    if (!viewportEl) throw new Error('Could not find the board to export.')
+
+    const bounds = getNodesBounds(current)
+    const padding = 60
+    const width = bounds.width + padding * 2
+    const height = bounds.height + padding * 2
+    // A bare number here means a RATIO of the viewport, not pixels — only a
+    // string suffixed 'px' is read literally. Passing 60 instead of '60px'
+    // was read as "60x the viewport as margin," collapsing the zoom to a
+    // sliver and leaving the real content adrift in a mostly-blank image.
+    const { x, y, zoom } = getViewportForBounds(bounds, width, height, 0.1, 2, `${padding}px`)
+
+    const previousTransform = viewportEl.style.transform
+    viewportEl.style.transform = `translate(${x}px, ${y}px) scale(${zoom})`
+    try {
+      const dataUrl = await toPng(viewportEl, {
+        width,
+        height,
+        backgroundColor: '#f9fafb',
+        pixelRatio: 2,
+      })
+      const link = document.createElement('a')
+      link.download = 'content-model.png'
+      link.href = dataUrl
+      link.click()
+    } finally {
+      viewportEl.style.transform = previousTransform
+    }
+  }, [])
+
   // Empties the open project only. Images referenced by other projects are
   // left alone; the blob cleanup effect removes whatever is now unreferenced.
   // Set by clearBoard so the save that follows is allowed to write an empty
@@ -879,8 +925,8 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
   }, [setNodes, setEdges])
 
   useEffect(() => {
-    onReady({ addContentType, addImageNode, addSticky, arrangeBoard, clearBoard, getExportData, importContentTypes })
-  }, [onReady, addContentType, addImageNode, addSticky, arrangeBoard, clearBoard, getExportData, importContentTypes])
+    onReady({ addContentType, addImageNode, addSticky, arrangeBoard, clearBoard, getExportData, exportImage, importContentTypes })
+  }, [onReady, addContentType, addImageNode, addSticky, arrangeBoard, clearBoard, getExportData, exportImage, importContentTypes])
 
   const restoredRef = useRef(false)
   const fitViewRef = useRef<(() => void) | null>(null)
