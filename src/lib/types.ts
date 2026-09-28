@@ -65,6 +65,8 @@ export interface ContentTypeNodeData {
   onCompareType: (nodeId: string) => void
   /** True while this card is the lone selection, waiting for a second pick. */
   isCompareSelected?: boolean
+  /** True briefly after jumping here from the search box, to draw the eye. */
+  isJumpTarget?: boolean
 }
 
 export interface ImageNodeData {

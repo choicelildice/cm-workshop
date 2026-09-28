@@ -31,6 +31,14 @@ export const TOUR_STEPS: TourStep[] = [
     placement: 'bottom',
   },
   {
+    target: 'find-type',
+    title: 'Find a content type',
+    body:
+      'On a big model, jump straight to a card by name instead of scrolling around for it. ' +
+      'Arrow keys move through the matches, Enter jumps.',
+    placement: 'bottom',
+  },
+  {
     target: 'field-library',
     title: 'Drag fields onto a card',
     body:

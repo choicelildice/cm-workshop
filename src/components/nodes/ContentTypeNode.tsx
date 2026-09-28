@@ -434,16 +434,20 @@ export default function ContentTypeNode({ id, data: rawData }: NodeProps) {
       className="rounded-lg overflow-visible shadow-md border bg-white transition-colors"
       style={{
         width: cardWidth,
-        borderColor: data.isCompareSelected
-          ? '#1773eb'
-          : dropTarget ? '#1773eb' : data.traceTargetColor ?? '#e5e7eb',
-        boxShadow: data.isCompareSelected
-          ? '0 0 0 2px #1773eb, 0 0 0 4px #1773eb33'
-          : dropTarget
-            ? '0 0 0 2px #1773eb55'
-            : data.traceTargetColor
-              ? `0 0 0 3px ${data.traceTargetColor}40`
-              : undefined,
+        borderColor: data.isJumpTarget
+          ? '#CC4500'
+          : data.isCompareSelected
+            ? '#1773eb'
+            : dropTarget ? '#1773eb' : data.traceTargetColor ?? '#e5e7eb',
+        boxShadow: data.isJumpTarget
+          ? '0 0 0 3px #CC450055'
+          : data.isCompareSelected
+            ? '0 0 0 2px #1773eb, 0 0 0 4px #1773eb33'
+            : dropTarget
+              ? '0 0 0 2px #1773eb55'
+              : data.traceTargetColor
+                ? `0 0 0 3px ${data.traceTargetColor}40`
+                : undefined,
       }}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}

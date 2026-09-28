@@ -55,6 +55,8 @@ interface CanvasProps {
       name: string
       fields: { cmaId: string; name: string; type: string; required: boolean; isArray: boolean; localized?: boolean; linkTargets: string[] }[]
     }[]) => void
+    listContentTypes: () => { id: string; label: string }[]
+    jumpToType: (nodeId: string) => void
   }) => void
 }
 
@@ -71,17 +73,27 @@ type PlacementData =
 
 function FlowControls({
   fitViewRef,
+  jumpToRef,
   screenToFlowRef,
 }: {
   fitViewRef: React.MutableRefObject<(() => void) | null>
+  jumpToRef: React.MutableRefObject<((nodeId: string) => void) | null>
   screenToFlowRef: React.MutableRefObject<((pos: { x: number; y: number }) => { x: number; y: number }) | null>
 }) {
   const { zoomIn, zoomOut, fitView, screenToFlowPosition } = useReactFlow()
 
   useEffect(() => {
     fitViewRef.current = () => fitView({ padding: 0.2 })
+    // Frames one node without changing the zoom on every other card, unlike
+    // fitView on the whole board — this is "find this type," not "recompose
+    // the view." A pixel string, not a bare number: fitView's padding reads a
+    // bare number as a viewport-relative RATIO, which for one small card
+    // would zoom out much further than intended (see exportImage for the
+    // same trap). minZoom/maxZoom bound the result either way.
+    jumpToRef.current = (nodeId) =>
+      fitView({ nodes: [{ id: nodeId }], duration: 400, padding: '160px', minZoom: 0.5, maxZoom: 1.25 })
     screenToFlowRef.current = screenToFlowPosition
-  }, [fitView, fitViewRef, screenToFlowPosition, screenToFlowRef])
+  }, [fitView, fitViewRef, jumpToRef, screenToFlowPosition, screenToFlowRef])
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
@@ -924,12 +936,44 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
     setEdges([])
   }, [setNodes, setEdges])
 
+  const listContentTypes = useCallback(() => {
+    return nodes
+      .filter((n) => n.type === 'contentType')
+      .map((n) => ({ id: n.id, label: (n.data as unknown as ContentTypeNodeData).label }))
+  }, [nodes])
+
+  // Briefly outlines a card after jumping to it from search, so landing on
+  // the right one is obvious even on a dense board where fitView alone might
+  // not draw the eye to it.
+  const [jumpTargetId, setJumpTargetId] = useState<string | null>(null)
+  const jumpHighlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const jumpToType = useCallback((nodeId: string) => {
+    jumpToRef.current?.(nodeId)
+    setJumpTargetId(nodeId)
+    if (jumpHighlightTimerRef.current) clearTimeout(jumpHighlightTimerRef.current)
+    jumpHighlightTimerRef.current = setTimeout(() => setJumpTargetId(null), 1500)
+  }, [])
+
   useEffect(() => {
-    onReady({ addContentType, addImageNode, addSticky, arrangeBoard, clearBoard, getExportData, exportImage, importContentTypes })
-  }, [onReady, addContentType, addImageNode, addSticky, arrangeBoard, clearBoard, getExportData, exportImage, importContentTypes])
+    return () => {
+      if (jumpHighlightTimerRef.current) clearTimeout(jumpHighlightTimerRef.current)
+    }
+  }, [])
+
+  useEffect(() => {
+    onReady({
+      addContentType, addImageNode, addSticky, arrangeBoard, clearBoard,
+      getExportData, exportImage, importContentTypes, listContentTypes, jumpToType,
+    })
+  }, [
+    onReady, addContentType, addImageNode, addSticky, arrangeBoard, clearBoard,
+    getExportData, exportImage, importContentTypes, listContentTypes, jumpToType,
+  ])
 
   const restoredRef = useRef(false)
   const fitViewRef = useRef<(() => void) | null>(null)
+  const jumpToRef = useRef<((nodeId: string) => void) | null>(null)
 
   // Always-current nodes, so the image effect can read them without taking
   // `nodes` as a dependency (which would re-run it on every drag frame).
@@ -987,13 +1031,14 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
             onSetTypeEmoji, onDeleteType, onCompareType, hasClipboard, kinds: _kinds,
             // Transient UI state: never persisted. It only ever exists on the
             // render-time copy, but strip it so a future change can't leak it.
-            tracedFieldColors: _tc, traceTargetColor: _ttc, isCompareSelected: _ics, ...rest
+            tracedFieldColors: _tc, traceTargetColor: _ttc, isCompareSelected: _ics,
+            isJumpTarget: _ijt, ...rest
           } = n.data as unknown as ContentTypeNodeData
           void onAddField; void onDeleteField; void onCopyField; void onPasteField
           void onDropField; void onReorderField; void onUpdateField; void onRenameType
           void onSetTypeKind; void onSetTypeEmoji; void onDeleteType; void onTraceField
           void onCompareType
-          void hasClipboard; void _kinds; void _tc; void _ttc; void _ics
+          void hasClipboard; void _kinds; void _tc; void _ttc; void _ics; void _ijt
           return { ...n, data: rest }
         }
         if (n.type === 'image') {
@@ -1445,7 +1490,8 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
     // completes, the panel itself is the indicator and the outline would just
     // be stale on two cards that may no longer be adjacent after a re-arrange.
     const compareSelected = compareIds.length === 1 && compareIds[0] === n.id
-    if (!dimmed && owned.length === 0 && !tint && !compareSelected) return n
+    const jumpTarget = jumpTargetId === n.id
+    if (!dimmed && owned.length === 0 && !tint && !compareSelected && !jumpTarget) return n
 
     const traced: Record<string, string> = {}
     for (const f of owned) traced[f.fieldId] = TRACE_COLORS[tracedFields.indexOf(f)].line
@@ -1458,6 +1504,7 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
         ...(owned.length ? { tracedFieldColors: traced } : {}),
         ...(tint ? { traceTargetColor: tint } : {}),
         ...(compareSelected ? { isCompareSelected: true } : {}),
+        ...(jumpTarget ? { isJumpTarget: true } : {}),
       },
     }
   })
@@ -1502,7 +1549,7 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
            clickable via their visible stroke (see globals.css). */
         defaultEdgeOptions={{ interactionWidth: 0 }}
       >
-        <FlowControls fitViewRef={fitViewRef} screenToFlowRef={screenToFlowRef} />
+        <FlowControls fitViewRef={fitViewRef} jumpToRef={jumpToRef} screenToFlowRef={screenToFlowRef} />
 
         {/* Alignment guides, drawn in flow space so they pan/zoom with the canvas */}
         <ViewportPortal>

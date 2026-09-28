@@ -1,8 +1,8 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import dynamic from 'next/dynamic'
-import { ImageIcon, PlusSquare, Trash2, Settings, UploadCloud, DownloadCloud, StickyNote, HelpCircle, Share2, Network, Image as ImageDownloadIcon, ChevronDown, X } from 'lucide-react'
+import { ImageIcon, PlusSquare, Trash2, Settings, UploadCloud, DownloadCloud, StickyNote, HelpCircle, Share2, Network, Image as ImageDownloadIcon, ChevronDown, Search, X } from 'lucide-react'
 import FieldLibrary from '@/components/FieldLibrary'
 import ContentfulExportModal from '@/components/ContentfulExportModal'
 import ContentfulImportModal from '@/components/ContentfulImportModal'
@@ -34,6 +34,8 @@ interface CanvasActions {
     name: string
     fields: { cmaId: string; name: string; type: string; required: boolean; isArray: boolean; localized?: boolean; linkTargets: string[] }[]
   }[]) => void
+  listContentTypes: () => { id: string; label: string }[]
+  jumpToType: (nodeId: string) => void
 }
 
 export default function WorkshopApp() {
@@ -55,6 +57,14 @@ export default function WorkshopApp() {
   const [projectId, setProjectId] = useState<string | null>(null)
   const [kinds, setKinds] = useState<KindDef[]>(DEFAULT_KINDS)
   const [showKindSettings, setShowKindSettings] = useState(false)
+  const [typeSearch, setTypeSearch] = useState('')
+  const [showTypeSearch, setShowTypeSearch] = useState(false)
+  const [typeSearchIndex, setTypeSearchIndex] = useState(0)
+  // Read from actionsRef only inside handlers below, never during render —
+  // accessing a ref's value while rendering can silently miss updates.
+  const [allTypes, setAllTypes] = useState<{ id: string; label: string }[]>([])
+  const typeSearchRef = useRef<HTMLDivElement>(null)
+  const typeSearchInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     setProjectId(ensureCurrentProject({ name: SAMPLE_PROJECT_NAME, data: buildSampleModel() }))
@@ -148,6 +158,61 @@ export default function WorkshopApp() {
     return () => window.removeEventListener('mousedown', onDown)
   }, [showShareMenu])
 
+  const openTypeSearch = useCallback(() => {
+    // Canvas owns the node list, so the toolbar re-reads it fresh each time
+    // the box opens rather than trying to keep a live subscription.
+    setAllTypes(actionsRef.current?.listContentTypes() ?? [])
+    setTypeSearch('')
+    setTypeSearchIndex(0)
+    setShowTypeSearch(true)
+  }, [])
+
+  const closeTypeSearch = useCallback(() => {
+    setShowTypeSearch(false)
+    setTypeSearch('')
+  }, [])
+
+  const filteredTypes = useMemo(() => {
+    const q = typeSearch.trim().toLowerCase()
+    if (!q) return allTypes
+    return allTypes.filter((t) => t.label.toLowerCase().includes(q))
+  }, [allTypes, typeSearch])
+
+  // Clamped at read time rather than re-synced by an effect: the stored index
+  // can point past the end right after a keystroke narrows the list, and this
+  // is the only place that matters.
+  const activeTypeIndex = Math.min(typeSearchIndex, Math.max(filteredTypes.length - 1, 0))
+
+  const jumpToType = useCallback((id: string) => {
+    actionsRef.current?.jumpToType(id)
+    closeTypeSearch()
+  }, [closeTypeSearch])
+
+  useEffect(() => {
+    if (!showTypeSearch) return
+    typeSearchInputRef.current?.focus()
+    function onDown(e: MouseEvent) {
+      if (!typeSearchRef.current?.contains(e.target as globalThis.Node)) closeTypeSearch()
+    }
+    window.addEventListener('mousedown', onDown)
+    return () => window.removeEventListener('mousedown', onDown)
+  }, [showTypeSearch, closeTypeSearch])
+
+  function handleTypeSearchKeyDown(e: React.KeyboardEvent) {
+    if (e.key === 'Escape') { closeTypeSearch(); return }
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      setTypeSearchIndex(Math.min(activeTypeIndex + 1, filteredTypes.length - 1))
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      setTypeSearchIndex(Math.max(activeTypeIndex - 1, 0))
+    } else if (e.key === 'Enter') {
+      e.preventDefault()
+      const match = filteredTypes[activeTypeIndex]
+      if (match) jumpToType(match.id)
+    }
+  }
+
   function commitAddType() {
     const name = typeName.trim()
     if (name && actionsRef.current) {
@@ -225,6 +290,56 @@ export default function WorkshopApp() {
           >
             Add
           </button>
+        </div>
+
+        {/* Find a content type */}
+        <div className="relative" ref={typeSearchRef} data-tour="find-type">
+          {showTypeSearch ? (
+            <div className="border border-blue-400 rounded-lg px-2.5 py-1.5 w-56 flex items-center gap-1.5">
+              <Search size={13} className="text-gray-400 flex-shrink-0" />
+              <input
+                ref={typeSearchInputRef}
+                type="text"
+                className="flex-1 outline-none text-base text-gray-900 placeholder-gray-400 min-w-0"
+                placeholder="Find a content type…"
+                value={typeSearch}
+                onChange={(e) => setTypeSearch(e.target.value)}
+                onKeyDown={handleTypeSearchKeyDown}
+              />
+            </div>
+          ) : (
+            <button
+              className="flex items-center gap-1.5 text-base font-medium text-gray-600 hover:text-blue-700 hover:bg-blue-50 px-3 py-1.5 rounded-lg transition-colors"
+              onClick={openTypeSearch}
+              title="Find a content type by name"
+            >
+              <Search size={14} />
+              Find
+            </button>
+          )}
+
+          {showTypeSearch && (
+            <div className="absolute left-0 top-full mt-1 w-56 bg-white border border-gray-200 rounded-xl shadow-xl z-50 py-1.5 max-h-72 overflow-y-auto">
+              {filteredTypes.length === 0 ? (
+                <p className="px-3 py-2 text-sm text-gray-400">
+                  {allTypes.length === 0 ? 'No content types on this board yet.' : 'No match.'}
+                </p>
+              ) : (
+                filteredTypes.map((t, i) => (
+                  <button
+                    key={t.id}
+                    className={`w-full flex items-center px-3 py-1.5 text-sm text-left truncate transition-colors ${
+                      i === activeTypeIndex ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-50'
+                    }`}
+                    onMouseEnter={() => setTypeSearchIndex(i)}
+                    onClick={() => jumpToType(t.id)}
+                  >
+                    {t.label}
+                  </button>
+                ))
+              )}
+            </div>
+          )}
         </div>
 
         {/* Arrange */}
