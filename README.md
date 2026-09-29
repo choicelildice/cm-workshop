@@ -77,7 +77,7 @@ A single shared code:
 
 ```bash
 # .env.local (gitignored)
-APP_PASSWORD=x7Kp2mQ9vLd4Rt8w
+APP_PASSWORD=<a long random string>
 ```
 
 Or one code per audience, so each customer or team can be revoked
@@ -85,8 +85,8 @@ independently. Entries may be separated by newlines or commas, and `#` starts a
 comment, so the value can be kept readable:
 
 ```bash
-APP_PASSWORD="internal:REDACTED   # us
-acme:REDACTED                    # Acme Corp, issued 2026-09-15"
+APP_PASSWORD="internal:<code>   # us
+acme:<code>                     # Acme Corp, issued 2026-09-15"
 ```
 
 Comments are stripped per line before entries are split, so a comma inside a
