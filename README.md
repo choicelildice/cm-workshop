@@ -176,3 +176,8 @@ its item type with the list flag set. Omitted fields are skipped.
 
 Next.js (App Router), TypeScript, Tailwind, [React Flow](https://reactflow.dev)
 for the canvas, Phosphor Icons, IndexedDB for image storage.
+
+## Roadmap
+
+See [ROADMAP.md](./ROADMAP.md) for what's planned, recently shipped, and
+explicitly out of scope for now.

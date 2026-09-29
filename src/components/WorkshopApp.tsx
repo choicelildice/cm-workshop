@@ -149,13 +149,15 @@ export default function WorkshopApp() {
   }, [])
 
   // Close the Share dropdown on an outside click, same pattern as ProjectMenu.
+  // Capture phase: React Flow's pan-to-drag stops a board mousedown from ever
+  // bubbling to window, so a bubble-phase listener would miss board clicks.
   useEffect(() => {
     if (!showShareMenu) return
     function onDown(e: MouseEvent) {
       if (!shareMenuRef.current?.contains(e.target as globalThis.Node)) setShowShareMenu(false)
     }
-    window.addEventListener('mousedown', onDown)
-    return () => window.removeEventListener('mousedown', onDown)
+    window.addEventListener('mousedown', onDown, true)
+    return () => window.removeEventListener('mousedown', onDown, true)
   }, [showShareMenu])
 
   const openTypeSearch = useCallback(() => {
@@ -188,14 +190,15 @@ export default function WorkshopApp() {
     closeTypeSearch()
   }, [closeTypeSearch])
 
+  // Same capture-phase reasoning as the Share dropdown above.
   useEffect(() => {
     if (!showTypeSearch) return
     typeSearchInputRef.current?.focus()
     function onDown(e: MouseEvent) {
       if (!typeSearchRef.current?.contains(e.target as globalThis.Node)) closeTypeSearch()
     }
-    window.addEventListener('mousedown', onDown)
-    return () => window.removeEventListener('mousedown', onDown)
+    window.addEventListener('mousedown', onDown, true)
+    return () => window.removeEventListener('mousedown', onDown, true)
   }, [showTypeSearch, closeTypeSearch])
 
   function handleTypeSearchKeyDown(e: React.KeyboardEvent) {

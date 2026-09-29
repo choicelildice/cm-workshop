@@ -29,7 +29,10 @@ export default function ProjectMenu({ projectId, onSwitch }: Props) {
 
   useEffect(refresh, [projectId])
 
-  // Close on outside click
+  // Close on outside click. Capture phase, not bubble: React Flow's own
+  // pan-to-drag (d3-zoom) calls stopImmediatePropagation on a mousedown that
+  // lands on the board, so a bubble-phase window listener never sees clicks
+  // there — capture runs on the way down, before that swallow happens.
   useEffect(() => {
     if (!open) return
     function onDown(e: MouseEvent) {
@@ -38,8 +41,8 @@ export default function ProjectMenu({ projectId, onSwitch }: Props) {
         setConfirmDelete(false)
       }
     }
-    window.addEventListener('mousedown', onDown)
-    return () => window.removeEventListener('mousedown', onDown)
+    window.addEventListener('mousedown', onDown, true)
+    return () => window.removeEventListener('mousedown', onDown, true)
   }, [open])
 
   useEffect(() => {
