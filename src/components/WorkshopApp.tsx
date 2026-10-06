@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import dynamic from 'next/dynamic'
-import { ImageIcon, PlusSquare, Trash2, Settings, UploadCloud, DownloadCloud, StickyNote, HelpCircle, Share2, Network, Image as ImageDownloadIcon, ChevronDown, Search, X } from 'lucide-react'
+import { ImageIcon, PlusSquare, Trash2, Settings, UploadCloud, DownloadCloud, StickyNote, HelpCircle, Share2, Network, Image as ImageDownloadIcon, ChevronDown, Search, Menu, X } from 'lucide-react'
 import FieldLibrary from '@/components/FieldLibrary'
 import ContentfulExportModal from '@/components/ContentfulExportModal'
 import ContentfulImportModal from '@/components/ContentfulImportModal'
@@ -42,9 +42,14 @@ export default function WorkshopApp() {
   const actionsRef = useRef<CanvasActions | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const shareMenuRef = useRef<HTMLDivElement>(null)
+  const toolbarMenuRef = useRef<HTMLDivElement>(null)
 
   const [typeName, setTypeName] = useState('')
   const [confirmClear, setConfirmClear] = useState(false)
+  // Below the breakpoint where the full action row stops fitting, it
+  // collapses into this single dropdown instead of wrapping and pushing
+  // the toolbar's height into the canvas.
+  const [showToolbarMenu, setShowToolbarMenu] = useState(false)
   const [showCfExport, setShowCfExport] = useState(false)
   const [showCfImport, setShowCfImport] = useState(false)
   const [showTour, setShowTour] = useState(false)
@@ -160,6 +165,16 @@ export default function WorkshopApp() {
     return () => window.removeEventListener('mousedown', onDown, true)
   }, [showShareMenu])
 
+  // Same pattern for the collapsed-toolbar menu.
+  useEffect(() => {
+    if (!showToolbarMenu) return
+    function onDown(e: MouseEvent) {
+      if (!toolbarMenuRef.current?.contains(e.target as globalThis.Node)) setShowToolbarMenu(false)
+    }
+    window.addEventListener('mousedown', onDown, true)
+    return () => window.removeEventListener('mousedown', onDown, true)
+  }, [showToolbarMenu])
+
   const openTypeSearch = useCallback(() => {
     // Canvas owns the node list, so the toolbar re-reads it fresh each time
     // the box opens rather than trying to keep a live subscription.
@@ -249,7 +264,7 @@ export default function WorkshopApp() {
   return (
     <div className="h-screen flex flex-col bg-gray-50" onDragOver={handleDragOver} onDrop={handleDrop}>
       {/* Toolbar */}
-      <div className="h-16 bg-white border-b border-gray-200 flex items-center gap-3 px-5 flex-shrink-0 shadow-sm">
+      <div className="relative h-16 bg-white border-b border-gray-200 flex items-center gap-3 px-5 flex-shrink-0 shadow-sm">
         {/* Logo / App name */}
         <div className="flex items-center gap-2">
           <div
@@ -267,6 +282,29 @@ export default function WorkshopApp() {
 
         <div className="w-px h-5 bg-gray-200 mx-1" />
 
+        {/* Below xl, the full action row no longer fits and wraps onto a
+            second line, pushing the fixed-height toolbar down into the
+            canvas. Below that width, hide the row and offer the same
+            actions from this button instead. */}
+        <button
+          className="xl:hidden flex items-center justify-center w-9 h-9 rounded-lg text-gray-600 hover:text-blue-700 hover:bg-blue-50 transition-colors flex-shrink-0"
+          onClick={() => setShowToolbarMenu((v) => !v)}
+          title="More actions"
+        >
+          <Menu size={18} />
+        </button>
+
+        {/* Everything below is one block: a normal row at xl and up, or a
+            dropdown panel toggled by the button above when narrower. Same
+            elements either way — only the wrapping layout changes. */}
+        <div
+          ref={toolbarMenuRef}
+          className={
+            showToolbarMenu
+              ? 'absolute left-3 top-full mt-1 w-72 max-h-[calc(100vh-5rem)] overflow-y-auto flex flex-col items-stretch gap-1 bg-white border border-gray-200 rounded-xl shadow-xl p-2 z-50 xl:static xl:mt-0 xl:w-auto xl:max-h-none xl:overflow-visible xl:flex-row xl:items-center xl:gap-3 xl:bg-transparent xl:border-0 xl:rounded-none xl:shadow-none xl:p-0 xl:z-auto'
+              : 'hidden xl:flex xl:flex-row xl:items-center xl:gap-3'
+          }
+        >
         {/* Add Content Type */}
         <div className="flex items-center gap-1.5" data-tour="add-type">
           <PlusSquare size={14} className="text-gray-400 flex-shrink-0" />
@@ -386,8 +424,9 @@ export default function WorkshopApp() {
           onChange={handleFileChange}
         />
 
-        {/* Spacer */}
-        <div className="flex-1" />
+        {/* Spacer: pushes the rest right in the horizontal row only — in the
+            stacked dropdown panel it would just add blank vertical space. */}
+        <div className="hidden xl:block xl:flex-1" />
 
         {/* Clear Board */}
         {confirmClear ? (
@@ -489,6 +528,7 @@ export default function WorkshopApp() {
           To Contentful
         </button>
 
+        </div>
       </div>
 
       {imageExportError && (
