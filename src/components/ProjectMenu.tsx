@@ -57,6 +57,15 @@ export default function ProjectMenu({ projectId, onSwitch }: Props) {
     refresh()
     setOpen(false)
     onSwitch(meta.id)
+    // Straight into renaming, so naming a fresh project doesn't require
+    // closing the dropdown, reopening it, and clicking Rename. The draft
+    // starts empty rather than pre-filled with "Untitled N", so typing a
+    // name doesn't require selecting and clearing it first. Leaving the
+    // field blank — Enter, Escape, or clicking away — commits nothing
+    // (see commitRename), so the project keeps the "Untitled N" it was
+    // created with.
+    setNameDraft('')
+    setRenaming(true)
   }
 
   function handleDuplicate() {
@@ -72,6 +81,10 @@ export default function ProjectMenu({ projectId, onSwitch }: Props) {
   }
 
   function commitRename() {
+    // renameProject no-ops on an empty/whitespace name, so leaving the
+    // draft blank (Enter, Escape, clicking away, all route here via onBlur
+    // or the handlers below) keeps whatever name the project already has —
+    // "Untitled N" for a freshly created one.
     renameProject(projectId, nameDraft)
     setRenaming(false)
     refresh()
@@ -92,7 +105,8 @@ export default function ProjectMenu({ projectId, onSwitch }: Props) {
       {renaming ? (
         <input
           ref={renameInputRef}
-          className="border border-blue-400 rounded-lg px-2.5 py-1.5 text-base outline-none focus:ring-2 focus:ring-blue-100 w-48 text-gray-900"
+          className="border border-blue-400 rounded-lg px-2.5 py-1.5 text-base outline-none focus:ring-2 focus:ring-blue-100 w-48 text-gray-900 placeholder-gray-400"
+          placeholder={currentName}
           value={nameDraft}
           onChange={(e) => setNameDraft(e.target.value)}
           onBlur={commitRename}
