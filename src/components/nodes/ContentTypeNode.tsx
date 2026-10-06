@@ -364,15 +364,19 @@ export default function ContentTypeNode({ id, data: rawData }: NodeProps) {
   const { color: headerColor, text: headerText } = resolveTypeColors(data.kind, kinds)
   const kindLabel = resolveKindLabel(data.kind, kinds)
 
-  // Widen the card so the title fits rather than truncating. Measured from the
-  // rendered header text, since glyph widths vary too much for a per-character
-  // estimate to be reliable across names like "IIII" and "WWWW".
-  const titleRef = useRef<HTMLSpanElement>(null)
+  // Widen the card so the title fits rather than truncating. Measured from a
+  // hidden span rather than the real title, since glyph widths vary too much
+  // for a per-character estimate to be reliable across names like "IIII" and
+  // "WWWW" — but the real title is stretched to fill the header (flex-1), so
+  // once it has grown wide, a shorter name no longer overflows it and
+  // scrollWidth just reports the box's current (still-wide) size back. The
+  // hidden span is never stretched, so its width always reflects the text
+  // alone, in both directions.
+  const measureRef = useRef<HTMLSpanElement>(null)
   const [titleWidth, setTitleWidth] = useState(0)
   useEffect(() => {
-    const el = titleRef.current
+    const el = measureRef.current
     if (!el) return
-    // scrollWidth is the untruncated text width
     setTitleWidth(el.scrollWidth)
   }, [data.label, data.emoji, kindLabel])
 
@@ -488,6 +492,17 @@ export default function ContentTypeNode({ id, data: rawData }: NodeProps) {
           </button>
         )}
 
+        {/* Off-layout twin of the title, used only to measure the text's own
+            width (see cardWidth above) — never stretched, so unlike the real
+            title it reports a smaller width once the label shortens. */}
+        <span
+          ref={measureRef}
+          className="font-bold text-xs whitespace-nowrap"
+          style={{ position: 'absolute', visibility: 'hidden', pointerEvents: 'none', left: -9999 }}
+        >
+          {data.label}
+        </span>
+
         {renaming ? (
           <input
             ref={inputRef}
@@ -503,7 +518,6 @@ export default function ContentTypeNode({ id, data: rawData }: NodeProps) {
           />
         ) : (
           <span
-            ref={titleRef}
             className="flex-1 font-bold text-xs whitespace-nowrap overflow-hidden"
             style={{ color: headerText }}
           >
