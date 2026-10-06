@@ -68,9 +68,10 @@ export const TOUR_STEPS: TourStep[] = [
     target: 'arrange',
     title: 'Arrange untangles it',
     body:
-      'Lays the model out left to right: types nothing references on the left, flowing to types ' +
-      'that reference nothing. Circular references are drawn dashed and listed, and types with no ' +
-      'references either way are grouped below. Most useful on a model you have just imported.',
+      '“By reference” lays the model out left to right: types nothing references on the ' +
+      'left, flowing to types that reference nothing. Circular references are drawn dashed and ' +
+      'listed, and types with no references either way are grouped below. “By kind” clusters ' +
+      'cards by Topic / Assembly / Config instead, if you’d rather see the model by role.',
     placement: 'bottom',
   },
   {

@@ -29,7 +29,7 @@ import { ContentField, ContentTypeNodeData, ImageNodeData, StickyNodeData } from
 import { migrateFieldType, type ContentTypeKind, type KindDef } from '@/lib/field-type-meta'
 import { saveImage, loadImage, deleteImages, listImageIds } from '@/lib/image-store'
 import { snapPosition, NO_GUIDES, type Guides } from '@/lib/snap'
-import { layoutModel, edgeKey, type LayoutEdge } from '@/lib/layout'
+import { layoutModel, layoutByKind, edgeKey, type LayoutEdge, type KindGroupNode } from '@/lib/layout'
 import { TRACE_COLORS, SHARED_COLOR } from '@/lib/trace-colors'
 import { compareContentTypes } from '@/lib/compare-types'
 import DeleteTypeConfirm, { type PendingDelete } from '@/components/DeleteTypeConfirm'
@@ -47,6 +47,7 @@ interface CanvasProps {
     addImageNode: (file: File) => void
     addSticky: () => void
     arrangeBoard: () => { cycles: string[][]; orphans: number }
+    arrangeByKind: () => { groups: number; unassigned: number }
     clearBoard: () => void
     getExportData: () => { nodes: unknown[]; edges: unknown[] }
     exportImage: () => Promise<void>
@@ -858,6 +859,53 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
     }
   }, [setNodes, setEdges, mark])
 
+  /**
+   * Clusters cards by kind (Topic / Assembly / Config, or whatever a board's
+   * kinds are renamed to) instead of by reference depth — "what role does
+   * this play" rather than "what depends on what." A card with no kind set,
+   * or a kind id that's since been removed from the config, lands in its own
+   * group at the end rather than being silently skipped.
+   */
+  const arrangeByKind = useCallback((): { groups: number; unassigned: number } => {
+    const all = nodesRef.current
+    const cts = all.filter((n) => n.type === 'contentType')
+    if (cts.length === 0) return { groups: 0, unassigned: 0 }
+
+    mark()
+
+    const sized: KindGroupNode[] = cts.map((n) => {
+      const d = n.data as unknown as ContentTypeNodeData
+      const est = estimateCardSize(d.label ?? '', d.fields?.length ?? 0)
+      return {
+        id: n.id,
+        width: n.measured?.width ?? n.width ?? est.width,
+        height: n.measured?.height ?? n.height ?? est.height,
+        kind: d.kind,
+      }
+    })
+
+    const layout = layoutByKind(sized, kinds.map((k) => k.id))
+
+    const originX = Math.min(...cts.map((n) => n.position.x))
+    const originY = Math.min(...cts.map((n) => n.position.y))
+
+    setNodes((nds) =>
+      nds.map((n) => {
+        const at = layout.positions.get(n.id)
+        return at ? { ...n, position: { x: originX + at.x, y: originY + at.y } } : n
+      })
+    )
+
+    setTimeout(() => fitViewRef.current?.(), 60)
+
+    return {
+      groups: layout.groupOrder.length,
+      unassigned: layout.groupOrder.includes(undefined)
+        ? sized.filter((n) => !n.kind || !kinds.some((k) => k.id === n.kind)).length
+        : 0,
+    }
+  }, [setNodes, mark, kinds])
+
   const getExportData = useCallback(() => {
     const exportNodes = nodes
       .filter((n) => n.type === 'contentType')
@@ -963,11 +1011,11 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
 
   useEffect(() => {
     onReady({
-      addContentType, addImageNode, addSticky, arrangeBoard, clearBoard,
+      addContentType, addImageNode, addSticky, arrangeBoard, arrangeByKind, clearBoard,
       getExportData, exportImage, importContentTypes, listContentTypes, jumpToType,
     })
   }, [
-    onReady, addContentType, addImageNode, addSticky, arrangeBoard, clearBoard,
+    onReady, addContentType, addImageNode, addSticky, arrangeBoard, arrangeByKind, clearBoard,
     getExportData, exportImage, importContentTypes, listContentTypes, jumpToType,
   ])
 

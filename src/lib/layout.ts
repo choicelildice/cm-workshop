@@ -219,6 +219,98 @@ function orderWithinLayers(
   }
 }
 
+export interface KindGroupNode extends LayoutNode {
+  /** Kind id, or undefined/empty for a card with no kind set. */
+  kind?: string
+}
+
+export interface KindLayoutOptions {
+  /** Horizontal gap between kind groups. */
+  groupGap?: number
+  /** Gap between cards within a group, both directions. */
+  cardGap?: number
+  /** Cards per row within a group. */
+  columns?: number
+}
+
+const KIND_DEFAULTS: Required<KindLayoutOptions> = {
+  groupGap: 140,
+  cardGap: 60,
+  columns: 4,
+}
+
+export interface KindLayoutResult {
+  positions: Map<string, { x: number; y: number }>
+  /** Kind ids present on the board, in the order they were grouped. */
+  groupOrder: (string | undefined)[]
+}
+
+/**
+ * Groups cards into side-by-side clusters by kind rather than by reference
+ * depth — a different modelling question ("what role does this play") from
+ * layoutModel's ("what depends on what"), so it's a separate function rather
+ * than a mode flag threaded through the graph-layering one above.
+ *
+ * `kindOrder` controls which kind's group appears first (typically the
+ * board's configured kind order), so the grouping matches the legend the
+ * user already set up rather than an arbitrary one. A card whose kind isn't
+ * in `kindOrder` (including no kind at all) falls into a group at the end.
+ */
+export function layoutByKind(
+  nodes: KindGroupNode[],
+  kindOrder: string[],
+  options: KindLayoutOptions = {}
+): KindLayoutResult {
+  const opts = { ...KIND_DEFAULTS, ...options }
+  const positions = new Map<string, { x: number; y: number }>()
+  if (nodes.length === 0) return { positions, groupOrder: [] }
+
+  const rank = new Map(kindOrder.map((k, i) => [k, i]))
+  const groups = new Map<string | undefined, KindGroupNode[]>()
+  for (const n of nodes) {
+    const key = n.kind && rank.has(n.kind) ? n.kind : undefined
+    if (!groups.has(key)) groups.set(key, [])
+    groups.get(key)!.push(n)
+  }
+
+  // Configured kinds first in their configured order, then one group for
+  // everything else (unrecognised or unset), so a card is never silently
+  // dropped for having a stale or missing kind. Only one key can ever be
+  // undefined, so there's no tie to break between two "no kind" groups.
+  const groupOrder = [...groups.keys()].sort((a, b) => {
+    const ra = a !== undefined ? rank.get(a) ?? Number.MAX_SAFE_INTEGER : Number.MAX_SAFE_INTEGER + 1
+    const rb = b !== undefined ? rank.get(b) ?? Number.MAX_SAFE_INTEGER : Number.MAX_SAFE_INTEGER + 1
+    return ra - rb
+  })
+  // Sorted by id within a group for determinism, same reasoning as layoutModel
+  for (const g of groups.values()) g.sort((a, b) => a.id.localeCompare(b.id))
+
+  let x = 0
+  for (const key of groupOrder) {
+    const members = groups.get(key)!
+    const colWidth = Math.max(...members.map((n) => n.width))
+    const rowHeights: number[] = []
+    for (let i = 0; i < members.length; i += opts.columns) {
+      const rowMembers = members.slice(i, i + opts.columns)
+      rowHeights.push(Math.max(...rowMembers.map((n) => n.height)))
+    }
+
+    let y = 0
+    members.forEach((n, i) => {
+      const col = i % opts.columns
+      const row = Math.floor(i / opts.columns)
+      if (col === 0 && row > 0) y += rowHeights[row - 1] + opts.cardGap
+      positions.set(n.id, { x: x + col * (colWidth + opts.cardGap), y })
+    })
+
+    const groupWidth = Math.min(members.length, opts.columns) * colWidth +
+      (Math.min(members.length, opts.columns) - 1) * opts.cardGap
+    x += groupWidth + opts.groupGap
+  }
+
+  return { positions, groupOrder }
+}
+
 export function layoutModel(
   nodes: LayoutNode[],
   edges: LayoutEdge[],

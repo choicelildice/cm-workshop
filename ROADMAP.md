@@ -25,14 +25,16 @@ outright rather than letting it go stale.
   multi-select instead of a field click. Open question: should a focus set be
   saveable/named so you can flip between a couple of views on a big board, or
   is per-session (clears on reload, like tracing today) enough for now?
-- **Group by kind under Arrange.** Arrange currently only lays out left to
-  right by reference depth. Add an option to instead cluster cards by their
-  kind (Topic / Assembly / Config, or whatever a board's kinds are renamed
-  to) — a different, complementary layout question from reference depth,
-  so likely a mode toggle on Arrange rather than a replacement for it.
 
 ## Recently shipped
 
+- Arrange is now a dropdown: "By reference" (the original left-to-right
+  layout) or "By kind" (clusters cards by Topic / Assembly / Config, or
+  whatever a board's kinds are renamed to) (Oct 2026)
+- Content type cards shrink back down when a title is shortened, not just
+  grow (Oct 2026)
+- Toolbar collapses into a hamburger menu below Tailwind's xl breakpoint,
+  instead of wrapping and pushing into the canvas (Oct 2026)
 - Search a content type by name from the toolbar, jump to it on the canvas
   with a brief highlight (Sept 2026)
 - Export the board to a PNG image, moved under a Share dropdown alongside
@@ -49,18 +51,6 @@ outright rather than letting it go stale.
 - Sample project + guided intro tour, created on first run (Sept 2026)
 - Undo/redo, sticky notes, drag-and-drop field editing, Contentful import/
   export, Miro export (earlier 2026)
-
-## Known issues
-
-- **Content type cards only grow, never shrink.** A card's width auto-fits
-  the title, but widening is the only direction it moves — shortening a
-  title (or a field name) back down doesn't shrink the card back to fit.
-  Reported by Eric. Not investigated yet.
-- **Toolbar isn't responsive to screen size.** The toolbar is a single
-  fixed-width row of buttons; on a narrower window or a smaller/zoomed
-  screen the buttons wrap onto a second line and push down into the canvas.
-  Decided: collapse into a hamburger menu below some width threshold,
-  rather than shrinking/icon-only buttons. Not built yet.
 
 ## Later / under consideration
 

@@ -26,6 +26,7 @@ interface CanvasActions {
   addImageNode: (file: File) => void
   addSticky: () => void
   arrangeBoard: () => { cycles: string[][]; orphans: number }
+  arrangeByKind: () => { groups: number; unassigned: number }
   clearBoard: () => void
   getExportData: () => { nodes: unknown[]; edges: unknown[] }
   exportImage: () => Promise<void>
@@ -57,7 +58,13 @@ export default function WorkshopApp() {
   const [showShareModal, setShowShareModal] = useState(false)
   const [imageExportError, setImageExportError] = useState<string | null>(null)
   const [incoming, setIncoming] = useState<SharePayload | null>(null)
-  const [arrangeNote, setArrangeNote] = useState<{ cycles: string[][]; orphans: number } | null>(null)
+  const [arrangeNote, setArrangeNote] = useState<
+    | { mode: 'reference'; cycles: string[][]; orphans: number }
+    | { mode: 'kind'; groups: number; unassigned: number }
+    | null
+  >(null)
+  const [showArrangeMenu, setShowArrangeMenu] = useState(false)
+  const arrangeMenuRef = useRef<HTMLDivElement>(null)
   // Resolved on the client only — localStorage isn't available during SSR
   const [projectId, setProjectId] = useState<string | null>(null)
   const [kinds, setKinds] = useState<KindDef[]>(DEFAULT_KINDS)
@@ -153,6 +160,22 @@ export default function WorkshopApp() {
     actionsRef.current = actions
   }, [])
 
+  const handleArrangeByReference = useCallback(() => {
+    setShowArrangeMenu(false)
+    const result = actionsRef.current?.arrangeBoard()
+    if (result && (result.cycles.length || result.orphans)) {
+      setArrangeNote({ mode: 'reference', ...result })
+    }
+  }, [])
+
+  const handleArrangeByKind = useCallback(() => {
+    setShowArrangeMenu(false)
+    const result = actionsRef.current?.arrangeByKind()
+    if (result && result.unassigned > 0) {
+      setArrangeNote({ mode: 'kind', ...result })
+    }
+  }, [])
+
   // Close the Share dropdown on an outside click, same pattern as ProjectMenu.
   // Capture phase: React Flow's pan-to-drag stops a board mousedown from ever
   // bubbling to window, so a bubble-phase listener would miss board clicks.
@@ -174,6 +197,16 @@ export default function WorkshopApp() {
     window.addEventListener('mousedown', onDown, true)
     return () => window.removeEventListener('mousedown', onDown, true)
   }, [showToolbarMenu])
+
+  // Same pattern for the Arrange dropdown.
+  useEffect(() => {
+    if (!showArrangeMenu) return
+    function onDown(e: MouseEvent) {
+      if (!arrangeMenuRef.current?.contains(e.target as globalThis.Node)) setShowArrangeMenu(false)
+    }
+    window.addEventListener('mousedown', onDown, true)
+    return () => window.removeEventListener('mousedown', onDown, true)
+  }, [showArrangeMenu])
 
   const openTypeSearch = useCallback(() => {
     // Canvas owns the node list, so the toolbar re-reads it fresh each time
@@ -384,18 +417,45 @@ export default function WorkshopApp() {
         </div>
 
         {/* Arrange */}
-        <button
-          className="flex items-center gap-1.5 text-base font-semibold text-gray-800 hover:text-blue-700 hover:bg-blue-50 px-3 py-1.5 rounded-lg transition-colors border border-gray-300 hover:border-blue-300"
-          onClick={() => {
-            const result = actionsRef.current?.arrangeBoard()
-            if (result && (result.cycles.length || result.orphans)) setArrangeNote(result)
-          }}
-          data-tour="arrange"
-          title="Lay out content types left to right by reference depth"
-        >
-          <Network size={15} />
-          Arrange
-        </button>
+        <div className="relative" ref={arrangeMenuRef}>
+          <button
+            className="flex items-center gap-1.5 text-base font-semibold text-gray-800 hover:text-blue-700 hover:bg-blue-50 px-3 py-1.5 rounded-lg transition-colors border border-gray-300 hover:border-blue-300"
+            onClick={() => setShowArrangeMenu((v) => !v)}
+            data-tour="arrange"
+            title="Lay out the board automatically"
+          >
+            <Network size={15} />
+            Arrange
+            <ChevronDown size={12} className="text-gray-400" />
+          </button>
+
+          {showArrangeMenu && (
+            <div className="absolute left-0 top-full mt-1 w-64 bg-white border border-gray-200 rounded-xl shadow-xl z-50 py-1.5">
+              <button
+                className="w-full flex items-start gap-2 px-3 py-1.5 text-sm text-left text-gray-700 hover:bg-gray-50 transition-colors"
+                onClick={handleArrangeByReference}
+              >
+                <Network size={13} className="text-gray-400 mt-0.5 flex-shrink-0" />
+                <span>
+                  By reference
+                  <span className="block text-xs text-gray-400">Left to right, by what links to what</span>
+                </span>
+              </button>
+              <button
+                className="w-full flex items-start gap-2 px-3 py-1.5 text-sm text-left text-gray-700 hover:bg-gray-50 transition-colors"
+                onClick={handleArrangeByKind}
+              >
+                <Settings size={13} className="text-gray-400 mt-0.5 flex-shrink-0" />
+                <span>
+                  By kind
+                  <span className="block text-xs text-gray-400">
+                    Clustered by {kinds.map((k) => k.label).join(' / ')}
+                  </span>
+                </span>
+              </button>
+            </div>
+          )}
+        </div>
 
         {/* Sticky note */}
         <button
@@ -568,31 +628,40 @@ export default function WorkshopApp() {
           </button>
           <p className="text-xs font-bold text-gray-900 mb-2 pr-5">Arranged</p>
 
-          {arrangeNote.cycles.length > 0 && (
-            <div className="mb-2">
-              <p className="text-[11px] text-gray-600 mb-1">
-                {arrangeNote.cycles.length} circular reference
-                {arrangeNote.cycles.length === 1 ? '' : 's'}, drawn dashed:
-              </p>
-              <ul className="space-y-0.5">
-                {arrangeNote.cycles.slice(0, 5).map((path, i) => (
-                  <li key={i} className="text-[11px] text-gray-500 font-mono break-words">
-                    {path.join(' \u2192 ')}
-                  </li>
-                ))}
-              </ul>
-              {arrangeNote.cycles.length > 5 && (
-                <p className="text-[11px] text-gray-400 mt-0.5">
-                  and {arrangeNote.cycles.length - 5} more
+          {arrangeNote.mode === 'reference' ? (
+            <>
+              {arrangeNote.cycles.length > 0 && (
+                <div className="mb-2">
+                  <p className="text-[11px] text-gray-600 mb-1">
+                    {arrangeNote.cycles.length} circular reference
+                    {arrangeNote.cycles.length === 1 ? '' : 's'}, drawn dashed:
+                  </p>
+                  <ul className="space-y-0.5">
+                    {arrangeNote.cycles.slice(0, 5).map((path, i) => (
+                      <li key={i} className="text-[11px] text-gray-500 font-mono break-words">
+                        {path.join(' \u2192 ')}
+                      </li>
+                    ))}
+                  </ul>
+                  {arrangeNote.cycles.length > 5 && (
+                    <p className="text-[11px] text-gray-400 mt-0.5">
+                      and {arrangeNote.cycles.length - 5} more
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {arrangeNote.orphans > 0 && (
+                <p className="text-[11px] text-gray-600">
+                  {arrangeNote.orphans} type{arrangeNote.orphans === 1 ? '' : 's'} with no references
+                  either way, grouped below.
                 </p>
               )}
-            </div>
-          )}
-
-          {arrangeNote.orphans > 0 && (
+            </>
+          ) : (
             <p className="text-[11px] text-gray-600">
-              {arrangeNote.orphans} type{arrangeNote.orphans === 1 ? '' : 's'} with no references
-              either way, grouped below.
+              {arrangeNote.unassigned} type{arrangeNote.unassigned === 1 ? '' : 's'} with no kind
+              set, or a kind no longer in the list, grouped in their own cluster at the end.
             </p>
           )}
         </div>
