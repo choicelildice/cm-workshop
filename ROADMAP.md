@@ -33,8 +33,11 @@ outright rather than letting it go stale.
   whatever a board's kinds are renamed to) (Oct 2026)
 - Content type cards shrink back down when a title is shortened, not just
   grow (Oct 2026)
-- Toolbar collapses into a hamburger menu below Tailwind's xl breakpoint,
-  instead of wrapping and pushing into the canvas (Oct 2026)
+- Toolbar collapses into a hamburger menu below ~1760px, instead of
+  wrapping (and pushing into the canvas) or overflowing past the right
+  edge. First shipped at Tailwind's xl (1280px) as a placeholder, then
+  corrected to the real measured threshold — overflow was observed
+  starting at 1753px live (Oct 2026)
 - Search a content type by name from the toolbar, jump to it on the canvas
   with a brief highlight (Sept 2026)
 - Export the board to a PNG image, moved under a Share dropdown alongside

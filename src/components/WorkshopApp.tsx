@@ -315,27 +315,31 @@ export default function WorkshopApp() {
 
         <div className="w-px h-5 bg-gray-200 mx-1" />
 
-        {/* Below xl, the full action row no longer fits and wraps onto a
-            second line, pushing the fixed-height toolbar down into the
-            canvas. Below that width, hide the row and offer the same
-            actions from this button instead. */}
+        {/* Below ~1760px the full action row no longer fits and either wraps
+            onto a second line (pushing the toolbar down into the canvas) or
+            overflows past the right edge — measured live: overflow started
+            at 1753px, so this threshold sits just under that with a little
+            margin. Not a Tailwind default breakpoint, hence the arbitrary
+            min-[] variant rather than xl:/2xl:. Below that width, hide the
+            row and offer the same actions from this button instead. */}
         <button
-          className="xl:hidden flex items-center justify-center w-9 h-9 rounded-lg text-gray-600 hover:text-blue-700 hover:bg-blue-50 transition-colors flex-shrink-0"
+          className="min-[1760px]:hidden flex items-center justify-center w-9 h-9 rounded-lg text-gray-600 hover:text-blue-700 hover:bg-blue-50 transition-colors flex-shrink-0"
           onClick={() => setShowToolbarMenu((v) => !v)}
           title="More actions"
         >
           <Menu size={18} />
         </button>
 
-        {/* Everything below is one block: a normal row at xl and up, or a
-            dropdown panel toggled by the button above when narrower. Same
-            elements either way — only the wrapping layout changes. */}
+        {/* Everything below is one block: a normal row at the threshold above
+            and up, or a dropdown panel toggled by the button above when
+            narrower. Same elements either way — only the wrapping layout
+            changes. */}
         <div
           ref={toolbarMenuRef}
           className={
             showToolbarMenu
-              ? 'absolute left-3 top-full mt-1 w-72 max-h-[calc(100vh-5rem)] overflow-y-auto flex flex-col items-stretch gap-1 bg-white border border-gray-200 rounded-xl shadow-xl p-2 z-50 xl:static xl:mt-0 xl:w-auto xl:max-h-none xl:overflow-visible xl:flex-row xl:items-center xl:gap-3 xl:bg-transparent xl:border-0 xl:rounded-none xl:shadow-none xl:p-0 xl:z-auto'
-              : 'hidden xl:flex xl:flex-row xl:items-center xl:gap-3'
+              ? 'absolute left-3 top-full mt-1 w-72 max-h-[calc(100vh-5rem)] overflow-y-auto flex flex-col items-stretch gap-1 bg-white border border-gray-200 rounded-xl shadow-xl p-2 z-50 min-[1760px]:static min-[1760px]:mt-0 min-[1760px]:w-auto min-[1760px]:max-h-none min-[1760px]:overflow-visible min-[1760px]:flex-row min-[1760px]:items-center min-[1760px]:gap-3 min-[1760px]:bg-transparent min-[1760px]:border-0 min-[1760px]:rounded-none min-[1760px]:shadow-none min-[1760px]:p-0 min-[1760px]:z-auto'
+              : 'hidden min-[1760px]:flex min-[1760px]:flex-row min-[1760px]:items-center min-[1760px]:gap-3'
           }
         >
         {/* Add Content Type */}
@@ -486,7 +490,7 @@ export default function WorkshopApp() {
 
         {/* Spacer: pushes the rest right in the horizontal row only — in the
             stacked dropdown panel it would just add blank vertical space. */}
-        <div className="hidden xl:block xl:flex-1" />
+        <div className="hidden min-[1760px]:block min-[1760px]:flex-1" />
 
         {/* Clear Board */}
         {confirmClear ? (
