@@ -45,6 +45,13 @@ outright rather than letting it go stale.
 - Undo/redo, sticky notes, drag-and-drop field editing, Contentful import/
   export, Miro export (earlier 2026)
 
+## Known issues
+
+- **Content type cards only grow, never shrink.** A card's width auto-fits
+  the title, but widening is the only direction it moves — shortening a
+  title (or a field name) back down doesn't shrink the card back to fit.
+  Reported by Eric. Not investigated yet.
+
 ## Later / under consideration
 
 - **Server-side board storage.** Raised while discussing per-audience access
