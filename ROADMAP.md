@@ -25,6 +25,11 @@ outright rather than letting it go stale.
   multi-select instead of a field click. Open question: should a focus set be
   saveable/named so you can flip between a couple of views on a big board, or
   is per-session (clears on reload, like tracing today) enough for now?
+- **Group by kind under Arrange.** Arrange currently only lays out left to
+  right by reference depth. Add an option to instead cluster cards by their
+  kind (Topic / Assembly / Config, or whatever a board's kinds are renamed
+  to) — a different, complementary layout question from reference depth,
+  so likely a mode toggle on Arrange rather than a replacement for it.
 
 ## Recently shipped
 
@@ -53,9 +58,9 @@ outright rather than letting it go stale.
   Reported by Eric. Not investigated yet.
 - **Toolbar isn't responsive to screen size.** The toolbar is a single
   fixed-width row of buttons; on a narrower window or a smaller/zoomed
-  screen the buttons wrap onto a second line and push down into the canvas
-  instead of collapsing into something narrower (an overflow menu, smaller
-  buttons, icon-only, etc.). Not investigated yet.
+  screen the buttons wrap onto a second line and push down into the canvas.
+  Decided: collapse into a hamburger menu below some width threshold,
+  rather than shrinking/icon-only buttons. Not built yet.
 
 ## Later / under consideration
 
