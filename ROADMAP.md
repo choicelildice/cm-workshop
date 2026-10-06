@@ -51,6 +51,11 @@ outright rather than letting it go stale.
   the title, but widening is the only direction it moves — shortening a
   title (or a field name) back down doesn't shrink the card back to fit.
   Reported by Eric. Not investigated yet.
+- **Toolbar isn't responsive to screen size.** The toolbar is a single
+  fixed-width row of buttons; on a narrower window or a smaller/zoomed
+  screen the buttons wrap onto a second line and push down into the canvas
+  instead of collapsing into something narrower (an overflow menu, smaller
+  buttons, icon-only, etc.). Not investigated yet.
 
 ## Later / under consideration
 
