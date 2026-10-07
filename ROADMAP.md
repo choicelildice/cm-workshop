@@ -55,8 +55,24 @@ outright rather than letting it go stale.
 - Undo/redo, sticky notes, drag-and-drop field editing, Contentful import/
   export, Miro export (earlier 2026)
 
+## Known issues
+
+- **Sticky note text won't shrink past a certain size.** Font auto-fits the
+  note as it's resized, but stops shrinking before the text actually fits a
+  small note — overflows instead of continuing to scale down. Not
+  investigated yet.
+- **Reordering reference fields doesn't update their connecting lines.**
+  Dragging a reference field to a new position within the same content
+  type should move its arrow's attachment point along with it; the line
+  stays anchored to the old position instead. Not investigated yet.
+
 ## Later / under consideration
 
+- **Multi-select drag.** Drag a selection box over several cards (and/or
+  stickies/images) and move them together, rather than one at a time.
+  React Flow supports multi-selection natively; likely mostly a matter of
+  enabling it and checking it doesn't fight the existing placement/panning
+  mouse handling.
 - **Server-side board storage.** Raised while discussing per-audience access
   codes: multiple people editing the same board at once would need a real
   backend (auth, conflict resolution, migrating existing local boards) —
