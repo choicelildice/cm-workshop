@@ -496,6 +496,48 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
     [setNodes, mark]
   )
 
+  // makeContentTypeData (below) embeds handleDuplicateType in every card's
+  // data, but handleDuplicateType itself needs to build new card data the
+  // same way makeContentTypeData does — a direct cycle, where neither
+  // useCallback could reference the other by name. Broken with a ref, same
+  // pattern as pushHistoryRef elsewhere in this file: declared here with a
+  // no-op, assigned its real value in a bare statement right after
+  // makeContentTypeData is defined, read through the ref instead of closing
+  // over makeContentTypeData directly.
+  const makeContentTypeDataRef = useRef<
+    (label: string, fields?: ContentField[], kind?: ContentTypeKind, emoji?: string) => ContentTypeNodeData
+  >(() => { throw new Error('makeContentTypeData not ready yet') })
+
+  const handleDuplicateType = useCallback(
+    (nodeId: string) => {
+      const source = nodesRef.current.find((n) => n.id === nodeId)
+      if (!source || source.type !== 'contentType') return
+      mark()
+
+      const d = source.data as unknown as ContentTypeNodeData
+      const existingLabels = new Set(
+        nodesRef.current
+          .filter((n) => n.type === 'contentType')
+          .map((n) => (n.data as unknown as ContentTypeNodeData).label)
+      )
+      let label = `${d.label} copy`
+      let i = 2
+      while (existingLabels.has(label)) label = `${d.label} copy ${i++}`
+
+      const fields = d.fields.map((f) => ({ ...f, id: uuidv4() }))
+      const newId = uuidv4()
+      const data = makeContentTypeDataRef.current(label, fields, d.kind, d.emoji)
+      // Offset so the copy is visibly a new card, not stacked exactly on top
+      const position = { x: source.position.x + 40, y: source.position.y + 40 }
+
+      setNodes((nds) => [
+        ...nds,
+        { id: newId, type: 'contentType', position, data: data as unknown as Record<string, unknown> },
+      ])
+    },
+    [setNodes, mark]
+  )
+
   const makeContentTypeData = useCallback(
     (label: string, fields: ContentField[] = [], kind?: ContentTypeKind, emoji?: string): ContentTypeNodeData => ({
       label,
@@ -516,10 +558,12 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
       onSetTypeKind: handleSetTypeKind,
       onSetTypeEmoji: handleSetTypeEmoji,
       onDeleteType: handleDeleteType,
+      onDuplicateType: handleDuplicateType,
       onCompareType: handleCompareType,
     }),
-    [clipboard, kinds, handleAddField, handleDeleteField, handleCopyField, handlePasteField, handleDropField, handleReorderField, handleUpdateField, handleTraceField, handleRenameType, handleSetTypeKind, handleSetTypeEmoji, handleDeleteType, handleCompareType]
+    [clipboard, kinds, handleAddField, handleDeleteField, handleCopyField, handlePasteField, handleDropField, handleReorderField, handleUpdateField, handleTraceField, handleRenameType, handleSetTypeKind, handleSetTypeEmoji, handleDeleteType, handleDuplicateType, handleCompareType]
   )
+  makeContentTypeDataRef.current = makeContentTypeData
 
   // Sync clipboard state to all existing CT nodes
   useEffect(() => {
@@ -1076,7 +1120,7 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
           const {
             onAddField, onDeleteField, onCopyField, onPasteField, onDropField,
             onReorderField, onUpdateField, onTraceField, onRenameType, onSetTypeKind,
-            onSetTypeEmoji, onDeleteType, onCompareType, hasClipboard, kinds: _kinds,
+            onSetTypeEmoji, onDeleteType, onDuplicateType, onCompareType, hasClipboard, kinds: _kinds,
             // Transient UI state: never persisted. It only ever exists on the
             // render-time copy, but strip it so a future change can't leak it.
             tracedFieldColors: _tc, traceTargetColor: _ttc, isCompareSelected: _ics,
@@ -1084,7 +1128,7 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
           } = n.data as unknown as ContentTypeNodeData
           void onAddField; void onDeleteField; void onCopyField; void onPasteField
           void onDropField; void onReorderField; void onUpdateField; void onRenameType
-          void onSetTypeKind; void onSetTypeEmoji; void onDeleteType; void onTraceField
+          void onSetTypeKind; void onSetTypeEmoji; void onDeleteType; void onDuplicateType; void onTraceField
           void onCompareType
           void hasClipboard; void _kinds; void _tc; void _ttc; void _ics; void _ijt
           return { ...n, data: rest }

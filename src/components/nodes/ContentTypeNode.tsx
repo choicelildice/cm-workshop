@@ -574,6 +574,16 @@ export default function ContentTypeNode({ id, data: rawData }: NodeProps) {
               style={{ color: headerText }}
               onMouseDown={(e) => e.stopPropagation()}
               onDoubleClick={(e) => e.stopPropagation()}
+              onClick={(e) => { e.stopPropagation(); data.onDuplicateType(id) }}
+              title="Duplicate content type"
+            >
+              <Copy size={12} />
+            </button>
+            <button
+              className="nodrag ml-1 transition-opacity opacity-60 hover:opacity-100"
+              style={{ color: headerText }}
+              onMouseDown={(e) => e.stopPropagation()}
+              onDoubleClick={(e) => e.stopPropagation()}
               onClick={(e) => { e.stopPropagation(); data.onDeleteType(id) }}
               title="Delete content type"
             >

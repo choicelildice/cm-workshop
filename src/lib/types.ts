@@ -59,6 +59,13 @@ export interface ContentTypeNodeData {
   onSetTypeEmoji: (nodeId: string, emoji?: string) => void
   onDeleteType: (nodeId: string) => void
   /**
+   * Places a clean copy of this card near the original: same label (with a
+   * suffix), kind, emoji, and fields, but no reference connections — a
+   * duplicate's arrows would be ambiguous (same targets as the original? the
+   * reverse? none?), so it always starts with none, same as a brand-new card.
+   */
+  onDuplicateType: (nodeId: string) => void
+  /**
    * Cmd/Ctrl-click a card header to select it for comparison. A second
    * Cmd-click on a different card compares them; on the same card, clears it.
    */
