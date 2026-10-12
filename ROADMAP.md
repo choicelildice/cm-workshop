@@ -28,6 +28,14 @@ outright rather than letting it go stale.
 
 ## Recently shipped
 
+- Fixed: sticky note text now shrinks almost all the way down to the
+  note's minimum size, instead of getting stuck well before it (the
+  font-size floor was reached before the note's own size floor); fixed:
+  reordering a reference field now moves its connecting line with it
+  (React Flow was never told to re-measure the handle's new position)
+  (Oct 2026)
+- Duplicate a content type from its header, next to rename/kind/delete —
+  clean copy, no connections carried over (Oct 2026)
 - Arrange is now a dropdown: "By reference" (the original left-to-right
   layout) or "By kind" (clusters cards by Topic / Assembly / Config, or
   whatever a board's kinds are renamed to) (Oct 2026)
@@ -54,17 +62,6 @@ outright rather than letting it go stale.
 - Sample project + guided intro tour, created on first run (Sept 2026)
 - Undo/redo, sticky notes, drag-and-drop field editing, Contentful import/
   export, Miro export (earlier 2026)
-
-## Known issues
-
-- **Sticky note text won't shrink past a certain size.** Font auto-fits the
-  note as it's resized, but stops shrinking before the text actually fits a
-  small note — overflows instead of continuing to scale down. Not
-  investigated yet.
-- **Reordering reference fields doesn't update their connecting lines.**
-  Dragging a reference field to a new position within the same content
-  type should move its arrow's attachment point along with it; the line
-  stays anchored to the old position instead. Not investigated yet.
 
 ## Later / under consideration
 
