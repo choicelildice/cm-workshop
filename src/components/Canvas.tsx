@@ -67,6 +67,12 @@ interface TraceSummary {
   sharedLabels: string[]
 }
 
+interface IncomingTraceSummary {
+  subjectLabel: string
+  /** One entry per referencing field, which may repeat a source type. */
+  sources: { label: string; fieldName: string }[]
+}
+
 type PlacementData =
   | { type: 'contentType'; name: string }
   | { type: 'image'; file: File; imageUrl: string }
@@ -197,10 +203,22 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
   const clearCompare = useCallback(() => setCompareIds([]), [])
   const comparePair = compareIds.length === 2 ? (compareIds as [string, string]) : null
 
+  /**
+   * The content type whose INCOMING references are being traced — the
+   * opposite question from tracedFields, which is always one field's
+   * OUTGOING arrows. Only one at a time: a type either has everything that
+   * points at it highlighted, or it doesn't, so there's no second-colour
+   * "compare two incoming sets" case the way outgoing tracing has.
+   */
+  const [incomingTraceId, setIncomingTraceId] = useState<string | null>(null)
+  const clearIncomingTrace = useCallback(() => setIncomingTraceId(null), [])
+
   const handleTraceField = useCallback((nodeId: string, fieldId: string, additive: boolean) => {
-    // Tracing and comparing are two different questions about the board and
-    // share the same bottom-left panel slot, so starting one clears the other.
+    // Tracing, comparing, and incoming-tracing are different questions about
+    // the board that share the same bottom-left panel slot, so starting one
+    // clears the others.
     setCompareIds([])
+    setIncomingTraceId(null)
     setTracedFields((prev) => {
       const at = prev.findIndex((f) => f.nodeId === nodeId && f.fieldId === fieldId)
 
@@ -216,9 +234,9 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
   }, [])
 
   const handleCompareType = useCallback((nodeId: string) => {
-    // Tracing and comparing are two different questions about the board and
-    // share the same bottom-left panel slot, so starting one clears the other.
+    // See handleTraceField above re: shared panel slot.
     setTracedFields([])
+    setIncomingTraceId(null)
     setCompareIds((prev) => {
       // A pair was showing: any Cmd-click starts a fresh single selection,
       // rather than trying to extend a finished comparison
@@ -229,6 +247,15 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
       // completes the pair
       return prev[0] === nodeId ? [] : [prev[0], nodeId]
     })
+  }, [])
+
+  const handleTraceIncoming = useCallback((nodeId: string) => {
+    // See handleTraceField above re: shared panel slot.
+    setTracedFields([])
+    setCompareIds([])
+    // Clicking the same card again turns it off, same toggle feel as the
+    // other trace/compare gestures.
+    setIncomingTraceId((prev) => (prev === nodeId ? null : nodeId))
   }, [])
 
   const handleDeleteField = useCallback(
@@ -560,8 +587,9 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
       onDeleteType: handleDeleteType,
       onDuplicateType: handleDuplicateType,
       onCompareType: handleCompareType,
+      onTraceIncoming: handleTraceIncoming,
     }),
-    [clipboard, kinds, handleAddField, handleDeleteField, handleCopyField, handlePasteField, handleDropField, handleReorderField, handleUpdateField, handleTraceField, handleRenameType, handleSetTypeKind, handleSetTypeEmoji, handleDeleteType, handleDuplicateType, handleCompareType]
+    [clipboard, kinds, handleAddField, handleDeleteField, handleCopyField, handlePasteField, handleDropField, handleReorderField, handleUpdateField, handleTraceField, handleRenameType, handleSetTypeKind, handleSetTypeEmoji, handleDeleteType, handleDuplicateType, handleCompareType, handleTraceIncoming]
   )
   makeContentTypeDataRef.current = makeContentTypeData
 
@@ -808,6 +836,7 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
         // pending comparison or delete prompt
         setTracedFields([])
         clearCompare()
+        clearIncomingTrace()
         cancelPendingDelete()
         return
       }
@@ -830,7 +859,7 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
       window.removeEventListener('keydown', onKeyDown)
       window.removeEventListener('mousedown', onMouseDownCapture, true)
     }
-  }, [isPlacing, placeContentTypeAt, placeImageAt, placeStickyAt, clearCompare, cancelPendingDelete])
+  }, [isPlacing, placeContentTypeAt, placeImageAt, placeStickyAt, clearCompare, clearIncomingTrace, cancelPendingDelete])
 
 
   /**
@@ -1120,17 +1149,18 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
           const {
             onAddField, onDeleteField, onCopyField, onPasteField, onDropField,
             onReorderField, onUpdateField, onTraceField, onRenameType, onSetTypeKind,
-            onSetTypeEmoji, onDeleteType, onDuplicateType, onCompareType, hasClipboard, kinds: _kinds,
+            onSetTypeEmoji, onDeleteType, onDuplicateType, onCompareType, onTraceIncoming,
+            hasClipboard, kinds: _kinds,
             // Transient UI state: never persisted. It only ever exists on the
             // render-time copy, but strip it so a future change can't leak it.
             tracedFieldColors: _tc, traceTargetColor: _ttc, isCompareSelected: _ics,
-            isJumpTarget: _ijt, ...rest
+            isJumpTarget: _ijt, isIncomingTraceSubject: _iits, incomingTraceSourceColor: _itsc, ...rest
           } = n.data as unknown as ContentTypeNodeData
           void onAddField; void onDeleteField; void onCopyField; void onPasteField
           void onDropField; void onReorderField; void onUpdateField; void onRenameType
           void onSetTypeKind; void onSetTypeEmoji; void onDeleteType; void onDuplicateType; void onTraceField
-          void onCompareType
-          void hasClipboard; void _kinds; void _tc; void _ttc; void _ics; void _ijt
+          void onCompareType; void onTraceIncoming
+          void hasClipboard; void _kinds; void _tc; void _ttc; void _ics; void _ijt; void _iits; void _itsc
           return { ...n, data: rest }
         }
         if (n.type === 'image') {
@@ -1305,6 +1335,7 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
     // ids from the outgoing board
     setTracedFields([])
     clearCompare()
+    clearIncomingTrace()
     cancelPendingDelete()
 
     // Block saving until the incoming board is in memory, so an empty canvas
@@ -1357,7 +1388,7 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
 
     load()
     return () => { cancelled = true }
-  }, [projectId, makeContentTypeData, handleDeleteImage, makeStickyData, setNodes, setEdges, serializeNodes, clearCompare, cancelPendingDelete])
+  }, [projectId, makeContentTypeData, handleDeleteImage, makeStickyData, setNodes, setEdges, serializeNodes, clearCompare, clearIncomingTrace, cancelPendingDelete])
 
   // Delete selected nodes/edges.
   //
@@ -1368,7 +1399,7 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
   // instead of destroying the selection.
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Escape') { setTracedFields([]); clearCompare(); cancelPendingDelete(); return }
+      if (e.key === 'Escape') { setTracedFields([]); clearCompare(); clearIncomingTrace(); cancelPendingDelete(); return }
       if (e.key !== 'Backspace' && e.key !== 'Delete') return
 
       // Never hijack a keystroke meant for a text field
@@ -1395,7 +1426,7 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
 
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [requestDelete, clearCompare, cancelPendingDelete])
+  }, [requestDelete, clearCompare, clearIncomingTrace, cancelPendingDelete])
 
   // Flush on tab close. Saves are debounced 400ms, so a change made just
   // before closing would otherwise never reach storage.
@@ -1572,18 +1603,82 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
     }
   })()
 
+  /**
+   * Incoming trace: everything that references incomingTraceId, the
+   * opposite question from the outgoing-trace block above. Only ever one
+   * subject at a time, so this is a separate, simpler computation rather
+   * than trying to force both directions into one shape — there's no
+   * multi-colour "which of several traced things reach a shared target"
+   * case here, since there's nothing to compare against.
+   */
+  const { incomingDisplayEdges, incomingDimmedNodeIds, incomingSourceIds, incomingTraceSummary } = (() => {
+    const none = {
+      incomingDisplayEdges: null as typeof edges | null,
+      incomingDimmedNodeIds: null as Set<string> | null,
+      incomingSourceIds: null as Set<string> | null,
+      incomingTraceSummary: null as IncomingTraceSummary | null,
+    }
+    if (!incomingTraceId) return none
+
+    const subjectNode = nodes.find((n) => n.id === incomingTraceId)
+    if (!subjectNode) return none
+
+    const incoming = edges.filter((e) => e.target === incomingTraceId)
+    const sourceIds = new Set(incoming.map((e) => e.source))
+    const involved = new Set<string>([incomingTraceId, ...sourceIds])
+
+    const subjectLabel = (subjectNode.data as unknown as ContentTypeNodeData).label
+
+    return {
+      incomingDisplayEdges: edges.map((e) => {
+        if (e.target !== incomingTraceId) return { ...e, style: { ...e.style, opacity: 0.1 } }
+        return {
+          ...e,
+          animated: true,
+          zIndex: 10,
+          style: { ...e.style, stroke: TRACE_COLORS[0].line, strokeWidth: 3 },
+        }
+      }),
+      incomingDimmedNodeIds: new Set(
+        nodes.filter((n) => n.type === 'contentType' && !involved.has(n.id)).map((n) => n.id)
+      ),
+      incomingSourceIds: sourceIds,
+      incomingTraceSummary: {
+        subjectLabel,
+        sources: incoming.map((e) => {
+          const sourceNode = nodes.find((n) => n.id === e.source)
+          const sourceData = sourceNode?.data as unknown as ContentTypeNodeData | undefined
+          const handle = e.sourceHandle?.replace(/^field-/, '')
+          const field = sourceData?.fields.find((f) => f.id === handle)
+          return { label: sourceData?.label ?? e.source, fieldName: field?.name ?? 'field' }
+        }),
+      },
+    }
+  })()
+
+  // The two trace directions never run at once (handleTraceField and
+  // handleTraceIncoming each clear the other), so a card is dimmed by at
+  // most one of these.
+  const effectiveDimmedNodeIds = dimmedNodeIds ?? incomingDimmedNodeIds
+  const effectiveDisplayEdges = displayEdges !== edges ? displayEdges : incomingDisplayEdges ?? edges
+
   // The traced field ids go only to the cards that own them, so a card can mark
   // its active rows without every card re-rendering on each trace.
   const displayNodes = nodes.map((n) => {
-    const dimmed = dimmedNodeIds?.has(n.id)
+    const dimmed = effectiveDimmedNodeIds?.has(n.id)
     const owned = tracedFields.filter((f) => f.nodeId === n.id)
     const tint = nodeTint?.get(n.id)
+    const isIncomingSubject = n.id === incomingTraceId
+    const isIncomingSource = incomingSourceIds?.has(n.id) ?? false
     // A card is "selected" only while waiting for a second pick; once the pair
     // completes, the panel itself is the indicator and the outline would just
     // be stale on two cards that may no longer be adjacent after a re-arrange.
     const compareSelected = compareIds.length === 1 && compareIds[0] === n.id
     const jumpTarget = jumpTargetId === n.id
-    if (!dimmed && owned.length === 0 && !tint && !compareSelected && !jumpTarget) return n
+    if (
+      !dimmed && owned.length === 0 && !tint && !compareSelected && !jumpTarget &&
+      !isIncomingSubject && !isIncomingSource
+    ) return n
 
     const traced: Record<string, string> = {}
     for (const f of owned) traced[f.fieldId] = TRACE_COLORS[tracedFields.indexOf(f)].line
@@ -1597,6 +1692,8 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
         ...(tint ? { traceTargetColor: tint } : {}),
         ...(compareSelected ? { isCompareSelected: true } : {}),
         ...(jumpTarget ? { isJumpTarget: true } : {}),
+        ...(isIncomingSubject ? { isIncomingTraceSubject: true } : {}),
+        ...(isIncomingSource ? { incomingTraceSourceColor: TRACE_COLORS[0].line } : {}),
       },
     }
   })
@@ -1627,7 +1724,7 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
     <div ref={containerRef} style={{ width: '100%', height: '100%', position: 'relative', cursor: isPlacing ? 'crosshair' : 'default' }}>
       <ReactFlow
         nodes={displayNodes}
-        edges={displayEdges}
+        edges={effectiveDisplayEdges}
         onNodesChange={onNodesChangeSnapped}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
@@ -1780,6 +1877,42 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
             <p className="text-[10px] text-gray-400 mt-2 pt-2 border-t border-gray-100">
               &#8984;-click another reference field to compare
             </p>
+          )}
+        </div>
+      )}
+
+      {/* The opposite question from the panel above: what references THIS
+          type, rather than what one of its fields points to. */}
+      {incomingTraceSummary && (
+        <div className="absolute bottom-4 left-4 z-40 bg-white border border-gray-200 rounded-xl shadow-xl p-3 max-w-xs">
+          <div className="flex items-center justify-between gap-3 mb-2">
+            <p className="text-[11px] font-bold text-gray-900 truncate">
+              References to <span className="font-normal text-gray-600">{incomingTraceSummary.subjectLabel}</span>
+            </p>
+            <button
+              className="text-[11px] text-gray-400 hover:text-gray-700 transition-colors flex-shrink-0"
+              onClick={clearIncomingTrace}
+            >
+              Clear
+            </button>
+          </div>
+
+          {incomingTraceSummary.sources.length === 0 ? (
+            <p className="text-[11px] text-gray-500">Nothing references this type yet.</p>
+          ) : (
+            <div className="space-y-1">
+              {incomingTraceSummary.sources.map((s, i) => (
+                <div key={i} className="flex items-center gap-2 text-[11px]">
+                  <span
+                    className="flex-shrink-0 rounded"
+                    style={{ width: 10, height: 10, backgroundColor: TRACE_COLORS[0].line }}
+                  />
+                  <span className="text-gray-700 truncate">
+                    {s.label}.<strong>{s.fieldName}</strong>
+                  </span>
+                </div>
+              ))}
+            </div>
           )}
         </div>
       )}

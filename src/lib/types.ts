@@ -74,6 +74,16 @@ export interface ContentTypeNodeData {
   isCompareSelected?: boolean
   /** True briefly after jumping here from the search box, to draw the eye. */
   isJumpTarget?: boolean
+  /**
+   * Click a card's header (no modifier) to see everything that references
+   * IT — the opposite question from onTraceField, which is always one
+   * field's outgoing arrows. Clicking the same card again clears it.
+   */
+  onTraceIncoming: (nodeId: string) => void
+  /** True on the one card whose incoming references are being traced. */
+  isIncomingTraceSubject?: boolean
+  /** Set on a card that references the traced subject; the colour to outline it with. */
+  incomingTraceSourceColor?: string
 }
 
 export interface ImageNodeData {

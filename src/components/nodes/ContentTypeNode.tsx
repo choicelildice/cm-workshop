@@ -453,16 +453,22 @@ export default function ContentTypeNode({ id, data: rawData }: NodeProps) {
           ? '#CC4500'
           : data.isCompareSelected
             ? '#1773eb'
-            : dropTarget ? '#1773eb' : data.traceTargetColor ?? '#e5e7eb',
+            : data.isIncomingTraceSubject
+              ? '#1773eb'
+              : dropTarget ? '#1773eb' : data.traceTargetColor ?? data.incomingTraceSourceColor ?? '#e5e7eb',
         boxShadow: data.isJumpTarget
           ? '0 0 0 3px #CC450055'
           : data.isCompareSelected
             ? '0 0 0 2px #1773eb, 0 0 0 4px #1773eb33'
-            : dropTarget
-              ? '0 0 0 2px #1773eb55'
-              : data.traceTargetColor
-                ? `0 0 0 3px ${data.traceTargetColor}40`
-                : undefined,
+            : data.isIncomingTraceSubject
+              ? '0 0 0 2px #1773eb, 0 0 0 4px #1773eb33'
+              : dropTarget
+                ? '0 0 0 2px #1773eb55'
+                : data.traceTargetColor
+                  ? `0 0 0 3px ${data.traceTargetColor}40`
+                  : data.incomingTraceSourceColor
+                    ? `0 0 0 3px ${data.incomingTraceSourceColor}40`
+                    : undefined,
       }}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
@@ -481,14 +487,25 @@ export default function ContentTypeNode({ id, data: rawData }: NodeProps) {
         onMouseLeave={() => setHeaderHovered(false)}
         onDoubleClick={() => setRenaming(true)}
         onClick={(e) => {
-          // Cmd/Ctrl-click compares this card against another; a plain click
-          // is left alone (double-click still renames).
+          // Cmd/Ctrl-click compares this card against another. A plain click
+          // traces what references it — but e.detail === 1 excludes the
+          // second click of a double-click (which arrives as its own click
+          // event before the dblclick fires), so renaming doesn't also kick
+          // off, cancel, then leave a trace running from the same gesture.
           if (e.metaKey || e.ctrlKey) {
             e.stopPropagation()
             data.onCompareType(id)
+          } else if (e.detail === 1) {
+            data.onTraceIncoming(id)
           }
         }}
-        title={data.isCompareSelected ? 'Cmd-click another card to compare, or this one to cancel' : '⌘-click to compare with another content type'}
+        title={
+          data.isCompareSelected
+            ? 'Cmd-click another card to compare, or this one to cancel'
+            : data.isIncomingTraceSubject
+              ? 'Click to stop tracing references to this type'
+              : 'Click to trace what references this type · ⌘-click to compare with another'
+        }
       >
         {data.emoji && (
           <button
