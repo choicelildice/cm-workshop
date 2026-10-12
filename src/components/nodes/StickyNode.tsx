@@ -12,12 +12,19 @@ const DEFAULT_SIZE = 200
 const MIN_SIZE = 80
 const BASE_FONT = 14
 /**
- * Floor on the fitted size. Below about 8px text stops being readable, so a
- * note with more text than fits clips instead of shrinking indefinitely —
- * an unreadable note is worse than a truncated one, and zooming in still
+ * Floor on the fitted size, derived from BASE_FONT scaled down to MIN_SIZE
+ * rather than a separate fixed number. A higher fixed floor (8 was the
+ * previous value) gets reached by the proportional ceiling below while the
+ * note is still well above MIN_SIZE — a note resizing from ~121px down to
+ * 80px would then keep shrinking while its text stayed pinned at 8px,
+ * which reads as text that "won't size down any further." Deriving the
+ * floor from MIN_SIZE itself means the two stay in lockstep: the plateau
+ * only ever starts exactly at the smallest size the note can be. Below
+ * this, text still clips rather than shrinking indefinitely — an
+ * unreadable note is worse than a truncated one, and zooming in still
  * reveals the rest.
  */
-const MIN_FONT = 8
+const MIN_FONT = Math.max(1, Math.round(BASE_FONT * (MIN_SIZE / DEFAULT_SIZE)))
 
 export default function StickyNode({ id, data: rawData, width, height, selected }: NodeProps) {
   const data = rawData as unknown as StickyNodeData

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
-import { NodeProps, Handle, Position } from '@xyflow/react'
+import { NodeProps, Handle, Position, useUpdateNodeInternals } from '@xyflow/react'
 import { Trash2, X, Copy, Clipboard, ArrowRight, Check, Palette, Pencil, Smile } from 'lucide-react'
 import { ContentTypeNodeData, ContentField, FieldType } from '@/lib/types'
 import {
@@ -351,6 +351,17 @@ function FieldRow({
 
 export default function ContentTypeNode({ id, data: rawData }: NodeProps) {
   const data = rawData as unknown as ContentTypeNodeData
+
+  // React Flow caches each handle's measured position for performance and
+  // only re-measures a node when told to. A field's handle keeps the same
+  // id across a reorder (edges are keyed to the field, not its row index),
+  // so the arrow's logical attachment is already correct — but without this,
+  // its drawn position stays at the handle's old row until something else
+  // happens to trigger a re-measure (e.g. resizing the window).
+  const updateNodeInternals = useUpdateNodeInternals()
+  useEffect(() => {
+    updateNodeInternals(id)
+  }, [id, data.fields, updateNodeInternals])
 
   const [headerHovered, setHeaderHovered] = useState(false)
   const [renaming, setRenaming] = useState(false)
