@@ -25,17 +25,14 @@ outright rather than letting it go stale.
   multi-select instead of a field click. Open question: should a focus set be
   saveable/named so you can flip between a couple of views on a big board, or
   is per-session (clears on reload, like tracing today) enough for now?
-- **Trace incoming references, not just outgoing.** Today, clicking a
-  reference field traces what that field points TO (outgoing only — see
-  `handleTraceField`/`tracedFields` in Canvas.tsx). There's no way to click a
-  content type and see everything that points AT it. Likely a click target on
-  the card itself (header, or a dedicated affordance) rather than a field,
-  since "what references me" is a property of the whole type, not one field —
-  reuses the same dimming/highlight rendering, just the opposite edge
-  direction and a different trigger.
-
 ## Recently shipped
 
+- Trace incoming references: a plain click on a card's header shows
+  everything that points AT it (Cmd/Ctrl-click still compares, double-click
+  still renames). The opposite question from the existing field trace,
+  which only ever shows what one field points TO. Mutually exclusive with
+  outgoing trace and compare, same rule already used between those two
+  (Oct 2026)
 - Fixed: sticky note text now shrinks almost all the way down to the
   note's minimum size, instead of getting stuck well before it (the
   font-size floor was reached before the note's own size floor); fixed:

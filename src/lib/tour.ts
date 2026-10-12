@@ -61,7 +61,8 @@ export const TOUR_STEPS: TourStep[] = [
     body:
       'Click any Reference field to light up where it points and fade everything else. ' +
       '\u2318-click a second one to compare them: anything both reference is called out, ' +
-      'which is how you spot types doing overlapping jobs.',
+      'which is how you spot types doing overlapping jobs. Click a card\u2019s header instead ' +
+      'to flip the question: what references this type, not what it references.',
     placement: 'top',
   },
   {
