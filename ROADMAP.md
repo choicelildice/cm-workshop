@@ -25,6 +25,16 @@ outright rather than letting it go stale.
   multi-select instead of a field click. Open question: should a focus set be
   saveable/named so you can flip between a couple of views on a big board, or
   is per-session (clears on reload, like tracing today) enough for now?
+- **Handle customers with multiple Contentful spaces.** No design yet. Today
+  there's exactly one Contentful space id/environment/token remembered
+  globally (`cf-space-id` in localStorage, used by both
+  ContentfulImportModal and ContentfulExportModal) — switching between a
+  customer's spaces means re-entering credentials every time, and nothing
+  ties a given project/board to "which space this model is for." Worth
+  figuring out: per-project space credentials vs. a separate
+  space-switcher concept, and whether this should mirror how Kinds are
+  global-but-configurable or Projects are already fully separate.
+
 ## Recently shipped
 
 - Trace incoming references: a plain click on a card's header shows
