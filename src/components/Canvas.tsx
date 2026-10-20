@@ -56,7 +56,7 @@ interface CanvasProps {
       name: string
       fields: { cmaId: string; name: string; type: string; required: boolean; isArray: boolean; localized?: boolean; linkTargets: string[] }[]
     }[]) => void
-    listContentTypes: () => { id: string; label: string }[]
+    listContentTypes: () => { id: string; label: string; fields: string[] }[]
     jumpToType: (nodeId: string) => void
   }) => void
 }
@@ -1060,7 +1060,10 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
   const listContentTypes = useCallback(() => {
     return nodes
       .filter((n) => n.type === 'contentType')
-      .map((n) => ({ id: n.id, label: (n.data as unknown as ContentTypeNodeData).label }))
+      .map((n) => {
+        const d = n.data as unknown as ContentTypeNodeData
+        return { id: n.id, label: d.label, fields: d.fields.map((f) => f.name) }
+      })
   }, [nodes])
 
   // Briefly outlines a card after jumping to it from search, so landing on

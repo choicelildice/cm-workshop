@@ -35,7 +35,7 @@ interface CanvasActions {
     name: string
     fields: { cmaId: string; name: string; type: string; required: boolean; isArray: boolean; localized?: boolean; linkTargets: string[] }[]
   }[]) => void
-  listContentTypes: () => { id: string; label: string }[]
+  listContentTypes: () => { id: string; label: string; fields: string[] }[]
   jumpToType: (nodeId: string) => void
 }
 
@@ -74,7 +74,7 @@ export default function WorkshopApp() {
   const [typeSearchIndex, setTypeSearchIndex] = useState(0)
   // Read from actionsRef only inside handlers below, never during render —
   // accessing a ref's value while rendering can silently miss updates.
-  const [allTypes, setAllTypes] = useState<{ id: string; label: string }[]>([])
+  const [allTypes, setAllTypes] = useState<{ id: string; label: string; fields: string[] }[]>([])
   const typeSearchRef = useRef<HTMLDivElement>(null)
   const typeSearchInputRef = useRef<HTMLInputElement>(null)
 
@@ -222,16 +222,34 @@ export default function WorkshopApp() {
     setTypeSearch('')
   }, [])
 
-  const filteredTypes = useMemo(() => {
+  // A result is either the content type itself matching, or one of its
+  // fields matching — Cmd+F takes over Miro's slot for this exact reason,
+  // so it needs to cover more than browser find would (field names aren't
+  // visible text until a card is expanded, let alone searchable).
+  const searchRows = useMemo(() => {
     const q = typeSearch.trim().toLowerCase()
-    if (!q) return allTypes
-    return allTypes.filter((t) => t.label.toLowerCase().includes(q))
+    const rows: ({ nodeId: string; label: string } & (
+      | { kind: 'type' }
+      | { kind: 'field'; typeLabel: string; fieldName: string }
+    ))[] = []
+    for (const t of allTypes) {
+      if (!q || t.label.toLowerCase().includes(q)) {
+        rows.push({ kind: 'type', nodeId: t.id, label: t.label })
+      }
+      if (!q) continue
+      for (const fieldName of t.fields) {
+        if (fieldName.toLowerCase().includes(q)) {
+          rows.push({ kind: 'field', nodeId: t.id, label: fieldName, typeLabel: t.label, fieldName })
+        }
+      }
+    }
+    return rows
   }, [allTypes, typeSearch])
 
   // Clamped at read time rather than re-synced by an effect: the stored index
   // can point past the end right after a keystroke narrows the list, and this
   // is the only place that matters.
-  const activeTypeIndex = Math.min(typeSearchIndex, Math.max(filteredTypes.length - 1, 0))
+  const activeTypeIndex = Math.min(typeSearchIndex, Math.max(searchRows.length - 1, 0))
 
   const jumpToType = useCallback((id: string) => {
     actionsRef.current?.jumpToType(id)
@@ -249,18 +267,35 @@ export default function WorkshopApp() {
     return () => window.removeEventListener('mousedown', onDown, true)
   }, [showTypeSearch, closeTypeSearch])
 
+  // Cmd/Ctrl+F opens Find instead of the browser's own find-in-page — Miro
+  // takes over the same shortcut for the same reason: field names aren't
+  // visible page text (they're only in a card once you've dragged a field
+  // onto it), so browser find can't reach them anyway, and a canvas this
+  // size is exactly the case where "search everything" earns a dedicated
+  // shortcut. Capture phase, so it fires before the browser's own handler.
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'f') {
+        e.preventDefault()
+        openTypeSearch()
+      }
+    }
+    window.addEventListener('keydown', onKeyDown, true)
+    return () => window.removeEventListener('keydown', onKeyDown, true)
+  }, [openTypeSearch])
+
   function handleTypeSearchKeyDown(e: React.KeyboardEvent) {
     if (e.key === 'Escape') { closeTypeSearch(); return }
     if (e.key === 'ArrowDown') {
       e.preventDefault()
-      setTypeSearchIndex(Math.min(activeTypeIndex + 1, filteredTypes.length - 1))
+      setTypeSearchIndex(Math.min(activeTypeIndex + 1, searchRows.length - 1))
     } else if (e.key === 'ArrowUp') {
       e.preventDefault()
       setTypeSearchIndex(Math.max(activeTypeIndex - 1, 0))
     } else if (e.key === 'Enter') {
       e.preventDefault()
-      const match = filteredTypes[activeTypeIndex]
-      if (match) jumpToType(match.id)
+      const match = searchRows[activeTypeIndex]
+      if (match) jumpToType(match.nodeId)
     }
   }
 
@@ -379,7 +414,7 @@ export default function WorkshopApp() {
                 ref={typeSearchInputRef}
                 type="text"
                 className="flex-1 outline-none text-base text-gray-900 placeholder-gray-400 min-w-0"
-                placeholder="Find a content type…"
+                placeholder="Find a content type or field…"
                 value={typeSearch}
                 onChange={(e) => setTypeSearch(e.target.value)}
                 onKeyDown={handleTypeSearchKeyDown}
@@ -389,7 +424,7 @@ export default function WorkshopApp() {
             <button
               className="flex items-center gap-1.5 text-base font-medium text-gray-600 hover:text-blue-700 hover:bg-blue-50 px-3 py-1.5 rounded-lg transition-colors border border-gray-300 hover:border-blue-300"
               onClick={openTypeSearch}
-              title="Find a content type by name"
+              title="Find a content type or field (⌘F)"
             >
               <Search size={14} />
               Find
@@ -397,22 +432,39 @@ export default function WorkshopApp() {
           )}
 
           {showTypeSearch && (
-            <div className="absolute left-0 top-full mt-1 w-56 bg-white border border-gray-200 rounded-xl shadow-xl z-50 py-1.5 max-h-72 overflow-y-auto">
-              {filteredTypes.length === 0 ? (
+            <div className="absolute left-0 top-full mt-1 w-64 bg-white border border-gray-200 rounded-xl shadow-xl z-50 py-1.5 max-h-72 overflow-y-auto">
+              {searchRows.length === 0 ? (
                 <p className="px-3 py-2 text-sm text-gray-400">
                   {allTypes.length === 0 ? 'No content types on this board yet.' : 'No match.'}
                 </p>
               ) : (
-                filteredTypes.map((t, i) => (
+                searchRows.map((row, i) => (
                   <button
-                    key={t.id}
+                    key={`${row.kind}-${row.nodeId}-${row.label}-${i}`}
                     className={`w-full flex items-center px-3 py-1.5 text-sm text-left truncate transition-colors ${
                       i === activeTypeIndex ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-50'
                     }`}
                     onMouseEnter={() => setTypeSearchIndex(i)}
-                    onClick={() => jumpToType(t.id)}
+                    // jumpToType is the same useCallback-wrapped
+                    // actionsRef.current?.X() pattern used safely elsewhere
+                    // in this file (addSticky, clearBoard, etc. below) and
+                    // never reads the ref during render either way.
+                    // Confirmed by testing: the warning tracks with
+                    // searchRows' richer (union) item type, not with any
+                    // identifier name or actual ref access — it disappears
+                    // if the mapped item reverts to a plain {id, label}
+                    // shape. False positive, suppressed below.
+                    // eslint-disable-next-line react-hooks/refs
+                    onClick={() => jumpToType(row.nodeId)}
                   >
-                    {t.label}
+                    {row.kind === 'type' ? (
+                      row.label
+                    ) : (
+                      <span className="truncate">
+                        <span className="text-gray-400">{row.typeLabel}.</span>
+                        {row.fieldName}
+                      </span>
+                    )}
                   </button>
                 ))
               )}
