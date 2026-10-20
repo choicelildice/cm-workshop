@@ -387,7 +387,7 @@ export default function WorkshopApp() {
             </div>
           ) : (
             <button
-              className="flex items-center gap-1.5 text-base font-medium text-gray-600 hover:text-blue-700 hover:bg-blue-50 px-3 py-1.5 rounded-lg transition-colors"
+              className="flex items-center gap-1.5 text-base font-medium text-gray-600 hover:text-blue-700 hover:bg-blue-50 px-3 py-1.5 rounded-lg transition-colors border border-gray-300 hover:border-blue-300"
               onClick={openTypeSearch}
               title="Find a content type by name"
             >
@@ -511,7 +511,7 @@ export default function WorkshopApp() {
           </div>
         ) : (
           <button
-            className="flex items-center gap-1.5 text-base font-medium text-red-500 hover:text-red-700 hover:bg-red-50 px-3 py-1.5 rounded-lg transition-colors"
+            className="flex items-center gap-1.5 text-base font-medium text-red-500 hover:text-red-700 hover:bg-red-50 px-3 py-1.5 rounded-lg transition-colors border border-red-200 hover:border-red-300"
             onClick={() => setConfirmClear(true)}
           >
             <Trash2 size={14} />
@@ -522,7 +522,7 @@ export default function WorkshopApp() {
         {/* Share */}
         <div className="relative" ref={shareMenuRef}>
           <button
-            className="flex items-center gap-1.5 text-base font-medium text-gray-600 hover:text-blue-700 hover:bg-blue-50 px-3 py-1.5 rounded-lg transition-colors"
+            className="flex items-center gap-1.5 text-base font-medium text-gray-600 hover:text-blue-700 hover:bg-blue-50 px-3 py-1.5 rounded-lg transition-colors border border-gray-300 hover:border-blue-300"
             onClick={() => setShowShareMenu((v) => !v)}
             data-tour="share"
             title="Share this board"
@@ -552,7 +552,7 @@ export default function WorkshopApp() {
 
         {/* Tour */}
         <button
-          className="flex items-center gap-1.5 text-base font-medium text-gray-600 hover:text-blue-700 hover:bg-blue-50 px-3 py-1.5 rounded-lg transition-colors"
+          className="flex items-center gap-1.5 text-base font-medium text-gray-600 hover:text-blue-700 hover:bg-blue-50 px-3 py-1.5 rounded-lg transition-colors border border-gray-300 hover:border-blue-300"
           onClick={openTour}
           title="Show the intro tour"
         >
@@ -563,7 +563,7 @@ export default function WorkshopApp() {
         {/* Kind settings */}
         <button
           data-tour="kinds"
-          className="flex items-center gap-1.5 text-base font-medium text-gray-600 hover:text-blue-700 hover:bg-blue-50 px-3 py-1.5 rounded-lg transition-colors"
+          className="flex items-center gap-1.5 text-base font-medium text-gray-600 hover:text-blue-700 hover:bg-blue-50 px-3 py-1.5 rounded-lg transition-colors border border-gray-300 hover:border-blue-300"
           onClick={() => setShowKindSettings(true)}
           title="Configure content type kinds"
         >
@@ -584,7 +584,7 @@ export default function WorkshopApp() {
         {/* Export to Contentful */}
         <button
           data-tour="export"
-          className="flex items-center gap-1.5 text-base font-semibold text-white px-3 py-1.5 rounded-lg transition-opacity hover:opacity-90"
+          className="flex items-center gap-1.5 text-base font-semibold text-white px-3 py-1.5 rounded-lg transition-opacity hover:opacity-90 border border-gray-300"
           style={{ backgroundColor: '#1773eb' }}
           onClick={() => setShowCfExport(true)}
         >
