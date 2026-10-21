@@ -735,6 +735,7 @@ export default function WorkshopApp() {
 
       {showCfImport && (
         <ContentfulImportModal
+          projectId={projectId}
           onImport={(types) => actionsRef.current?.importContentTypes(types)}
           onClose={() => setShowCfImport(false)}
         />
@@ -742,6 +743,7 @@ export default function WorkshopApp() {
 
       {showCfExport && (
         <ContentfulExportModal
+          projectId={projectId}
           getExportData={() => actionsRef.current?.getExportData() ?? { nodes: [], edges: [] }}
           onClose={() => setShowCfExport(false)}
         />

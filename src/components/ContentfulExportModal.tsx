@@ -2,6 +2,9 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { AlertTriangle, ArrowRight, CheckCircle2, ExternalLink, Loader2, X } from 'lucide-react'
+import SpaceConnectionPicker from '@/components/SpaceConnectionPicker'
+import { findSpaceConnection } from '@/lib/space-connections'
+import { getProjectSpaceConnection } from '@/lib/projects'
 
 interface ExportPayload {
   nodes: unknown[]
@@ -9,6 +12,7 @@ interface ExportPayload {
 }
 
 interface Props {
+  projectId: string | null
   getExportData: () => ExportPayload
   onClose: () => void
 }
@@ -39,7 +43,7 @@ interface ResultRow {
   error?: string
 }
 
-export default function ContentfulExportModal({ getExportData, onClose }: Props) {
+export default function ContentfulExportModal({ projectId, getExportData, onClose }: Props) {
   const [spaceId, setSpaceId] = useState('')
   const [environmentId, setEnvironmentId] = useState('master')
   const [token, setToken] = useState('')
@@ -51,13 +55,24 @@ export default function ContentfulExportModal({ getExportData, onClose }: Props)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  // If this project remembers a saved space connection, that takes
+  // precedence over the last-typed values, so switching projects
+  // re-selects the right space.
   useEffect(() => {
     try {
+      const spaceConnectionId = projectId ? getProjectSpaceConnection(projectId) : undefined
+      const remembered = spaceConnectionId ? findSpaceConnection(spaceConnectionId) : undefined
+      if (remembered) {
+        setSpaceId(remembered.spaceId)
+        setEnvironmentId(remembered.environmentId)
+        setToken(remembered.token)
+        return
+      }
       setSpaceId(localStorage.getItem('cf-space-id') ?? '')
       setEnvironmentId(localStorage.getItem('cf-environment-id') ?? 'master')
       setToken(localStorage.getItem('cf-cma-token') ?? '')
     } catch {}
-  }, [])
+  }, [projectId])
 
   const call = useCallback(
     async (dryRun: boolean) => {
@@ -251,6 +266,21 @@ export default function ContentfulExportModal({ getExportData, onClose }: Props)
             <div className="text-xs text-gray-500 bg-gray-50 rounded-lg p-3 leading-relaxed">
               Needs a <strong>Content Management API</strong> token — Contentful → Settings → API
               keys → Content management tokens. Stored in this browser only.
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Saved space</label>
+              <SpaceConnectionPicker
+                projectId={projectId}
+                spaceId={spaceId}
+                environmentId={environmentId}
+                token={token}
+                onSelect={(c) => {
+                  setSpaceId(c.spaceId)
+                  setEnvironmentId(c.environmentId)
+                  setToken(c.token)
+                }}
+              />
             </div>
 
             <div>

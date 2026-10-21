@@ -2,6 +2,9 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { DownloadCloud, Loader2, Search, X } from 'lucide-react'
+import SpaceConnectionPicker from '@/components/SpaceConnectionPicker'
+import { findSpaceConnection } from '@/lib/space-connections'
+import { getProjectSpaceConnection } from '@/lib/projects'
 
 interface AvailableType {
   id: string
@@ -24,11 +27,12 @@ interface ImportedType {
 }
 
 interface Props {
+  projectId: string | null
   onImport: (types: ImportedType[]) => void
   onClose: () => void
 }
 
-export default function ContentfulImportModal({ onImport, onClose }: Props) {
+export default function ContentfulImportModal({ projectId, onImport, onClose }: Props) {
   const [spaceId, setSpaceId] = useState('')
   const [environmentId, setEnvironmentId] = useState('master')
   const [token, setToken] = useState('')
@@ -39,14 +43,24 @@ export default function ContentfulImportModal({ onImport, onClose }: Props) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // Shares stored credentials with the export modal
+  // Shares stored credentials with the export modal. If this project
+  // remembers a saved space connection, that takes precedence over the
+  // last-typed values, so switching projects re-selects the right space.
   useEffect(() => {
     try {
+      const spaceConnectionId = projectId ? getProjectSpaceConnection(projectId) : undefined
+      const remembered = spaceConnectionId ? findSpaceConnection(spaceConnectionId) : undefined
+      if (remembered) {
+        setSpaceId(remembered.spaceId)
+        setEnvironmentId(remembered.environmentId)
+        setToken(remembered.token)
+        return
+      }
       setSpaceId(localStorage.getItem('cf-space-id') ?? '')
       setEnvironmentId(localStorage.getItem('cf-environment-id') ?? 'master')
       setToken(localStorage.getItem('cf-cma-token') ?? '')
     } catch {}
-  }, [])
+  }, [projectId])
 
   const call = useCallback(
     async (contentTypeIds?: string[]) => {
@@ -188,6 +202,20 @@ export default function ContentfulImportModal({ onImport, onClose }: Props) {
           </>
         ) : (
           <div className="space-y-3">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Saved space</label>
+              <SpaceConnectionPicker
+                projectId={projectId}
+                spaceId={spaceId}
+                environmentId={environmentId}
+                token={token}
+                onSelect={(c) => {
+                  setSpaceId(c.spaceId)
+                  setEnvironmentId(c.environmentId)
+                  setToken(c.token)
+                }}
+              />
+            </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Space ID</label>
               <input

@@ -4,6 +4,14 @@ export interface ProjectMeta {
   id: string
   name: string
   updatedAt: number
+  /**
+   * Which saved space connection (see space-connections.ts) this project
+   * last imported from or exported to, so reopening it re-selects the
+   * right one instead of blank/last-typed fields. Optional: every project
+   * saved before this existed simply has none, which just means "no
+   * remembered connection yet" — never breaks loading or saving.
+   */
+  spaceConnectionId?: string
 }
 
 export interface ProjectData {
@@ -119,6 +127,26 @@ export function renameProject(id: string, name: string): void {
   const i = projects.findIndex((p) => p.id === id)
   if (i === -1) return
   projects[i] = { ...projects[i], name: trimmed, updatedAt: Date.now() }
+  writeIndex(projects)
+}
+
+/** Which saved space connection (if any) this project last used. */
+export function getProjectSpaceConnection(id: string): string | undefined {
+  return read<ProjectMeta[]>(INDEX_KEY, []).find((p) => p.id === id)?.spaceConnectionId
+}
+
+/**
+ * Remembers which saved space connection a project last used, so reopening
+ * it re-selects the right one in Import/Export. Deliberately does not bump
+ * updatedAt — picking a space connection isn't a change to the board's
+ * content, and bumping it would reorder the project list in ProjectMenu
+ * just from opening an export modal.
+ */
+export function setProjectSpaceConnection(id: string, spaceConnectionId: string | undefined): void {
+  const projects = read<ProjectMeta[]>(INDEX_KEY, [])
+  const i = projects.findIndex((p) => p.id === id)
+  if (i === -1) return
+  projects[i] = { ...projects[i], spaceConnectionId }
   writeIndex(projects)
 }
 
