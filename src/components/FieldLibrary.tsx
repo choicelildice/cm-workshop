@@ -49,10 +49,12 @@ function Group({ label, fields }: { label: string; fields: LibraryField[] }) {
 }
 
 // All 9 field types fit on screen with nothing hidden and nothing to filter,
-// so this stops at its own content height instead of stretching the full
-// column (the flex row it sits in otherwise stretches every child to match
-// the canvas's height) — a search box would be solving a problem this list
-// doesn't have.
+// so this stops at its own content height instead of stretching to match
+// the canvas's height (self-start opts out of that stretch here; its parent
+// wrapper in WorkshopApp.tsx needs the same, or the wrapper's own height —
+// invisible but still part of the layout — blocks drags/clicks on whatever
+// canvas content sits beneath it). A search box would be solving a problem
+// this list doesn't have.
 export default function FieldLibrary() {
   return (
     <div className="w-48 flex-shrink-0 self-start bg-white border-r border-b border-gray-200 rounded-br-lg flex flex-col">

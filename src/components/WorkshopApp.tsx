@@ -751,7 +751,7 @@ export default function WorkshopApp() {
 
       {/* Main area: sidebar + canvas */}
       <div className="flex-1 flex overflow-hidden">
-        <div data-tour="field-library" className="flex-shrink-0">
+        <div data-tour="field-library" className="flex-shrink-0 self-start">
           <FieldLibrary />
         </div>
         <div className="flex-1 overflow-hidden" data-tour="canvas">
