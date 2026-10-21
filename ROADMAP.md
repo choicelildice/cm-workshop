@@ -27,6 +27,15 @@ outright rather than letting it go stale.
   is per-session (clears on reload, like tracing today) enough for now?
 ## Recently shipped
 
+- Field library panel now also holds Sticky and Upload Image (moved out of
+  the toolbar) — drag either onto the board and it lands exactly where
+  dropped, same gesture as dragging a field onto a card. Clicking still
+  works too. Arrange and Kinds stayed in the toolbar: neither is a
+  placeable object, so there's no drag-out version of either (Oct 2026)
+- Field library floats over the canvas's top-left corner instead of
+  sitting in its own column, and stops at its own height instead of
+  trailing an invisible dead zone down the screen; dropped its search box
+  (nine always-visible items, nothing to filter) (Oct 2026)
 - Save named Contentful space connections (label + space id + environment
   + token), picked from a dropdown in Import/Export instead of re-typing
   every time. Each project remembers which connection it last used.
