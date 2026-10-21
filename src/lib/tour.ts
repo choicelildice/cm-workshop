@@ -79,9 +79,10 @@ export const TOUR_STEPS: TourStep[] = [
     target: 'sticky',
     title: 'Capture open questions',
     body:
-      'Sticky notes hold the things you haven’t decided yet. Double-click to type, ' +
-      'drag a corner to resize. They show up in a PNG export but are ignored by Contentful.',
-    placement: 'bottom',
+      'Drag a sticky note from here onto the board for anything you haven’t decided yet. ' +
+      'Double-click to type, drag a corner to resize. They show up in a PNG export but are ' +
+      'ignored by Contentful.',
+    placement: 'right',
   },
   {
     target: 'kinds',

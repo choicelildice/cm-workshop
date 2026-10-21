@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import dynamic from 'next/dynamic'
-import { ImageIcon, PlusSquare, Trash2, Settings, UploadCloud, DownloadCloud, StickyNote, HelpCircle, Share2, Network, Image as ImageDownloadIcon, ChevronDown, Search, Menu, X } from 'lucide-react'
+import { PlusSquare, Trash2, Settings, UploadCloud, DownloadCloud, HelpCircle, Share2, Network, Image as ImageDownloadIcon, ChevronDown, Search, Menu, X } from 'lucide-react'
 import FieldLibrary from '@/components/FieldLibrary'
 import ContentfulExportModal from '@/components/ContentfulExportModal'
 import ContentfulImportModal from '@/components/ContentfulImportModal'
@@ -513,33 +513,6 @@ export default function WorkshopApp() {
           )}
         </div>
 
-        {/* Sticky note */}
-        <button
-          data-tour="sticky"
-          className="flex items-center gap-1.5 text-base font-semibold text-gray-800 hover:text-blue-700 hover:bg-blue-50 px-3 py-1.5 rounded-lg transition-colors border border-gray-300 hover:border-blue-300"
-          onClick={() => actionsRef.current?.addSticky()}
-        >
-          <StickyNote size={15} />
-          Sticky
-        </button>
-
-        {/* Upload Image */}
-        <button
-          className="flex items-center gap-1.5 text-base font-semibold text-gray-800 hover:text-blue-700 hover:bg-blue-50 px-3 py-1.5 rounded-lg transition-colors border border-gray-300 hover:border-blue-300"
-          onClick={() => fileInputRef.current?.click()}
-        >
-          <ImageIcon size={15} />
-          Upload Image
-        </button>
-
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/*"
-          className="hidden"
-          onChange={handleFileChange}
-        />
-
         {/* Spacer: pushes the rest right in the horizontal row only — in the
             stacked dropdown panel it would just add blank vertical space. */}
         <div className="hidden min-[1760px]:block min-[1760px]:flex-1" />
@@ -764,8 +737,18 @@ export default function WorkshopApp() {
           )}
         </div>
         <div data-tour="field-library" className="absolute top-0 left-0 z-20">
-          <FieldLibrary />
+          <FieldLibrary
+            onAddSticky={() => actionsRef.current?.addSticky()}
+            onUploadImage={() => fileInputRef.current?.click()}
+          />
         </div>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={handleFileChange}
+        />
       </div>
     </div>
   )

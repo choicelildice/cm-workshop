@@ -34,6 +34,7 @@ import { TRACE_COLORS, SHARED_COLOR } from '@/lib/trace-colors'
 import { compareContentTypes } from '@/lib/compare-types'
 import DeleteTypeConfirm, { type PendingDelete } from '@/components/DeleteTypeConfirm'
 import { FIELD_TYPES } from '@/lib/field-types'
+import { TOOL_DRAG_TYPE, type ToolDragKind } from '@/lib/field-library'
 import { DEFAULT_STICKY_COLOR } from '@/lib/sticky-colors'
 import { loadProjectData, saveProjectData, allImageNodeIds } from '@/lib/projects'
 
@@ -798,6 +799,54 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
     }
     reader.readAsDataURL(file)
   }, [])
+
+  /**
+   * Dragging Sticky or Upload Image out of the sidebar lands the item right
+   * where it's dropped — no second click, unlike the toolbar's click-to-arm
+   * flow above (which addSticky/addImageNode still drive, untouched, for
+   * anyone who clicks instead of drags). A sticky places immediately on
+   * drop; an image has no file yet at drag-start (there's nothing to drag
+   * out of a sidebar icon), so the drop instead opens the file picker and
+   * remembers where to place whatever gets chosen.
+   */
+  const toolFileInputRef = useRef<HTMLInputElement>(null)
+  const pendingImageDropRef = useRef<{ x: number; y: number } | null>(null)
+
+  function handleToolDragOver(e: React.DragEvent) {
+    if (!e.dataTransfer.types.includes(TOOL_DRAG_TYPE)) return
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'copy'
+  }
+
+  function handleToolDrop(e: React.DragEvent) {
+    const raw = e.dataTransfer.getData(TOOL_DRAG_TYPE)
+    if (!raw) return
+    e.preventDefault()
+    const kind = raw as ToolDragKind
+    const pos = screenToFlowRef.current?.({ x: e.clientX, y: e.clientY })
+    if (!pos) return
+
+    if (kind === 'sticky') {
+      placeStickyAt(pos)
+    } else if (kind === 'image') {
+      pendingImageDropRef.current = pos
+      toolFileInputRef.current?.click()
+    }
+  }
+
+  function handleToolFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    const pos = pendingImageDropRef.current
+    pendingImageDropRef.current = null
+    e.target.value = ''
+    if (!file || !pos) return
+    const reader = new FileReader()
+    reader.onload = (ev) => {
+      const imageUrl = ev.target?.result as string
+      placeImageAt(file, imageUrl, pos)
+    }
+    reader.readAsDataURL(file)
+  }
 
   // Mouse tracking + click-to-place + escape during placement
   useEffect(() => {
@@ -1724,7 +1773,19 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
   const placementData = placementRef.current
 
   return (
-    <div ref={containerRef} style={{ width: '100%', height: '100%', position: 'relative', cursor: isPlacing ? 'crosshair' : 'default' }}>
+    <div
+      ref={containerRef}
+      style={{ width: '100%', height: '100%', position: 'relative', cursor: isPlacing ? 'crosshair' : 'default' }}
+      onDragOver={handleToolDragOver}
+      onDrop={handleToolDrop}
+    >
+      <input
+        ref={toolFileInputRef}
+        type="file"
+        accept="image/*"
+        style={{ display: 'none' }}
+        onChange={handleToolFileChange}
+      />
       <ReactFlow
         nodes={displayNodes}
         edges={effectiveDisplayEdges}
