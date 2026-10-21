@@ -48,16 +48,17 @@ function Group({ label, fields }: { label: string; fields: LibraryField[] }) {
   )
 }
 
+// Floats over the canvas's top-left corner (see WorkshopApp.tsx) rather than
+// sitting in its own full-height column, so it reads as a panel on top of
+// the board — same visual language as the Share/Arrange dropdowns and the
+// trace/compare panels — and never claims layout space the canvas can't use.
+//
 // All 9 field types fit on screen with nothing hidden and nothing to filter,
-// so this stops at its own content height instead of stretching to match
-// the canvas's height (self-start opts out of that stretch here; its parent
-// wrapper in WorkshopApp.tsx needs the same, or the wrapper's own height —
-// invisible but still part of the layout — blocks drags/clicks on whatever
-// canvas content sits beneath it). A search box would be solving a problem
-// this list doesn't have.
+// so there's no search box: it would be solving a problem this list doesn't
+// have.
 export default function FieldLibrary() {
   return (
-    <div className="w-48 flex-shrink-0 self-start bg-white border-r border-b border-gray-200 rounded-br-lg flex flex-col">
+    <div className="w-48 m-3 bg-white border border-gray-200 rounded-xl shadow-lg flex flex-col">
       <div className="px-3 py-2 border-b border-gray-200 flex-shrink-0">
         <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Field Library</p>
       </div>

@@ -749,15 +749,22 @@ export default function WorkshopApp() {
         />
       )}
 
-      {/* Main area: sidebar + canvas */}
-      <div className="flex-1 flex overflow-hidden">
-        <div data-tour="field-library" className="flex-shrink-0 self-start">
-          <FieldLibrary />
-        </div>
-        <div className="flex-1 overflow-hidden" data-tour="canvas">
+      {/* Main area: canvas fills the full width; the field library floats
+          over its top-left corner rather than sitting in its own column.
+          A same-height sidebar column would claim that height in the
+          layout even once its own content stopped filling it — dead space
+          belonging to neither panel, unreachable by canvas drags/clicks
+          but with nothing visible there either. Every other panel in this
+          app (Share, Arrange, trace/compare, etc.) already overlays the
+          canvas this same way. */}
+      <div className="flex-1 relative overflow-hidden">
+        <div className="absolute inset-0" data-tour="canvas">
           {projectId && (
             <Canvas key={canvasResetKey} projectId={projectId} kinds={kinds} onReady={handleCanvasReady} />
           )}
+        </div>
+        <div data-tour="field-library" className="absolute top-0 left-0 z-20">
+          <FieldLibrary />
         </div>
       </div>
     </div>
