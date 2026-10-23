@@ -25,6 +25,7 @@ interface CanvasActions {
   addContentType: (name: string) => void
   addImageNode: (file: File) => void
   addSticky: () => void
+  pullTool: (kind: 'sticky' | 'image') => void
   arrangeBoard: () => { cycles: string[][]; orphans: number }
   arrangeByKind: () => { groups: number; unassigned: number }
   clearBoard: () => void
@@ -740,6 +741,7 @@ export default function WorkshopApp() {
           <FieldLibrary
             onAddSticky={() => actionsRef.current?.addSticky()}
             onUploadImage={() => fileInputRef.current?.click()}
+            onPullTool={(kind) => actionsRef.current?.pullTool(kind)}
           />
         </div>
         <input

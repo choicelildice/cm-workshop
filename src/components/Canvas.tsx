@@ -34,7 +34,7 @@ import { TRACE_COLORS, SHARED_COLOR } from '@/lib/trace-colors'
 import { compareContentTypes } from '@/lib/compare-types'
 import DeleteTypeConfirm, { type PendingDelete } from '@/components/DeleteTypeConfirm'
 import { FIELD_TYPES } from '@/lib/field-types'
-import { TOOL_DRAG_TYPE, type ToolDragKind } from '@/lib/field-library'
+import { type ToolDragKind } from '@/lib/field-library'
 import { DEFAULT_STICKY_COLOR } from '@/lib/sticky-colors'
 import { loadProjectData, saveProjectData, allImageNodeIds } from '@/lib/projects'
 
@@ -47,6 +47,8 @@ interface CanvasProps {
     addContentType: (name: string) => void
     addImageNode: (file: File) => void
     addSticky: () => void
+    /** Begin placing a sidebar board item that is being dragged with the button held. */
+    pullTool: (kind: ToolDragKind) => void
     arrangeBoard: () => { cycles: string[][]; orphans: number }
     arrangeByKind: () => { groups: number; unassigned: number }
     clearBoard: () => void
@@ -77,18 +79,29 @@ interface IncomingTraceSummary {
 type PlacementData =
   | { type: 'contentType'; name: string }
   | { type: 'image'; file: File; imageUrl: string }
+  /**
+   * An image pulled off the sidebar before any file exists: the ghost is an
+   * empty frame, and releasing it opens the file picker with the drop spot
+   * remembered (see handleToolFileChange).
+   */
+  | { type: 'imagePick' }
   | { type: 'sticky' }
+
+/** Canvas-space size of a freshly placed sticky; the ghost scales this by zoom. */
+const STICKY_SIZE = 200
 
 function FlowControls({
   fitViewRef,
   jumpToRef,
   screenToFlowRef,
+  getZoomRef,
 }: {
   fitViewRef: React.MutableRefObject<(() => void) | null>
   jumpToRef: React.MutableRefObject<((nodeId: string) => void) | null>
   screenToFlowRef: React.MutableRefObject<((pos: { x: number; y: number }) => { x: number; y: number }) | null>
+  getZoomRef: React.MutableRefObject<(() => number) | null>
 }) {
-  const { zoomIn, zoomOut, fitView, screenToFlowPosition } = useReactFlow()
+  const { zoomIn, zoomOut, fitView, screenToFlowPosition, getZoom } = useReactFlow()
 
   useEffect(() => {
     fitViewRef.current = () => fitView({ padding: 0.2 })
@@ -101,7 +114,8 @@ function FlowControls({
     jumpToRef.current = (nodeId) =>
       fitView({ nodes: [{ id: nodeId }], duration: 400, padding: '160px', minZoom: 0.5, maxZoom: 1.25 })
     screenToFlowRef.current = screenToFlowPosition
-  }, [fitView, fitViewRef, jumpToRef, screenToFlowPosition, screenToFlowRef])
+    getZoomRef.current = getZoom
+  }, [fitView, fitViewRef, jumpToRef, screenToFlowPosition, screenToFlowRef, getZoom, getZoomRef])
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
@@ -160,9 +174,19 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
   // Image ids already written to IndexedDB. A node's imageUrl never changes
   // after creation, so each blob only ever needs to be stored once.
   const savedImagesRef = useRef<Set<string>>(new Set())
-  const [ghostPos, setGhostPos] = useState<{ x: number; y: number } | null>(null)
+  // Zoom is captured alongside the position on each mouse move (rather than
+  // read from the ref during render) so the ghost can be drawn at the size
+  // the node will actually have on the board.
+  const [ghostPos, setGhostPos] = useState<{ x: number; y: number; zoom: number } | null>(null)
+  /**
+   * True when placement was started by pulling an item off the sidebar with
+   * the button held, in which case it completes on release rather than on
+   * the next click. Both the effect below and the ghost's hint read it.
+   */
+  const [isPulling, setIsPulling] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
   const screenToFlowRef = useRef<((pos: { x: number; y: number }) => { x: number; y: number }) | null>(null)
+  const getZoomRef = useRef<(() => number) | null>(null)
 
   // pushHistory is defined further down (it needs serializeNodes), so handlers
   // above it call through this ref.
@@ -766,8 +790,8 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
           // Flow resolves width as `node.width ?? initialWidth ?? style.width`,
           // and a sticky has no Handle or intrinsic content to measure, so
           // without these it mounts collapsed and appears to vanish.
-          width: 200,
-          height: 200,
+          width: STICKY_SIZE,
+          height: STICKY_SIZE,
           data: makeStickyData() as unknown as Record<string, unknown>,
         },
       ])
@@ -777,6 +801,23 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
 
   const addSticky = useCallback(() => {
     placementRef.current = { type: 'sticky' }
+    setIsPulling(false)
+    setIsPlacing(true)
+    setGhostPos(null)
+  }, [])
+
+  /**
+   * Pulling Sticky or Upload Image off the sidebar, Miro-style: the sidebar
+   * calls this once the pointer has moved far enough with the button held,
+   * the note (or an empty frame) follows the cursor at board scale, and
+   * releasing over the canvas places it right there. Releasing anywhere else
+   * (back over the sidebar, outside the window) cancels. Reuses the same
+   * placement mode as click-to-arm, so Esc, the ghost, and panOnDrag all
+   * behave identically; only the completing gesture differs.
+   */
+  const pullTool = useCallback((kind: ToolDragKind) => {
+    placementRef.current = kind === 'sticky' ? { type: 'sticky' } : { type: 'imagePick' }
+    setIsPulling(true)
     setIsPlacing(true)
     setGhostPos(null)
   }, [])
@@ -784,6 +825,7 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
   // Enter placement mode for a content type
   const addContentType = useCallback((name: string) => {
     placementRef.current = { type: 'contentType', name }
+    setIsPulling(false)
     setIsPlacing(true)
     setGhostPos(null)
   }, [])
@@ -794,6 +836,7 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
     reader.onload = (e) => {
       const imageUrl = e.target?.result as string
       placementRef.current = { type: 'image', file, imageUrl }
+      setIsPulling(false)
       setIsPlacing(true)
       setGhostPos(null)
     }
@@ -801,38 +844,12 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
   }, [])
 
   /**
-   * Dragging Sticky or Upload Image out of the sidebar lands the item right
-   * where it's dropped — no second click, unlike the toolbar's click-to-arm
-   * flow above (which addSticky/addImageNode still drive, untouched, for
-   * anyone who clicks instead of drags). A sticky places immediately on
-   * drop; an image has no file yet at drag-start (there's nothing to drag
-   * out of a sidebar icon), so the drop instead opens the file picker and
+   * An image pulled off the sidebar has no file yet (there is nothing to
+   * pull out of an icon), so releasing it opens the file picker and
    * remembers where to place whatever gets chosen.
    */
   const toolFileInputRef = useRef<HTMLInputElement>(null)
   const pendingImageDropRef = useRef<{ x: number; y: number } | null>(null)
-
-  function handleToolDragOver(e: React.DragEvent) {
-    if (!e.dataTransfer.types.includes(TOOL_DRAG_TYPE)) return
-    e.preventDefault()
-    e.dataTransfer.dropEffect = 'copy'
-  }
-
-  function handleToolDrop(e: React.DragEvent) {
-    const raw = e.dataTransfer.getData(TOOL_DRAG_TYPE)
-    if (!raw) return
-    e.preventDefault()
-    const kind = raw as ToolDragKind
-    const pos = screenToFlowRef.current?.({ x: e.clientX, y: e.clientY })
-    if (!pos) return
-
-    if (kind === 'sticky') {
-      placeStickyAt(pos)
-    } else if (kind === 'image') {
-      pendingImageDropRef.current = pos
-      toolFileInputRef.current?.click()
-    }
-  }
 
   function handleToolFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
@@ -855,17 +872,45 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
     function onMouseMove(e: MouseEvent) {
       if (!containerRef.current) return
       const rect = containerRef.current.getBoundingClientRect()
-      setGhostPos({ x: e.clientX - rect.left, y: e.clientY - rect.top })
+      setGhostPos({ x: e.clientX - rect.left, y: e.clientY - rect.top, zoom: getZoomRef.current?.() ?? 1 })
     }
 
     function clearPlacement() {
       placementRef.current = null
       setIsPlacing(false)
+      setIsPulling(false)
       setGhostPos(null)
     }
 
     function onKeyDown(e: KeyboardEvent) {
       if (e.key === 'Escape') clearPlacement()
+    }
+
+    /** Lands whatever is being placed at a screen point, or opens the picker for an image. */
+    function placeAtScreen(p: PlacementData, client: { x: number; y: number }) {
+      const pos = screenToFlowRef.current?.(client)
+      if (!pos) return
+      if (p.type === 'contentType') placeContentTypeAt(p.name, pos)
+      else if (p.type === 'sticky') placeStickyAt(pos)
+      else if (p.type === 'imagePick') {
+        pendingImageDropRef.current = pos
+        toolFileInputRef.current?.click()
+      } else placeImageAt(p.file, p.imageUrl, pos)
+    }
+
+    // A pull completes on release. The sidebar sits over the canvas as a
+    // sibling, not a child, so a release back over it has a target outside
+    // the container and reads as a cancel — the note goes back on the stack.
+    function onMouseUp(e: MouseEvent) {
+      if (!isPulling || e.button !== 0) return
+      const el = containerRef.current
+      const target = e.target as HTMLElement | null
+      const p = placementRef.current
+      if (p && el && target && el.contains(target) &&
+          !target.closest('.react-flow__controls, .react-flow__minimap, .react-flow__attribution')) {
+        placeAtScreen(p, { x: e.clientX, y: e.clientY })
+      }
+      clearPlacement()
     }
 
     // Placement completes on mousedown in the capture phase rather than via
@@ -889,26 +934,26 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
         cancelPendingDelete()
         return
       }
-      const pos = screenToFlowRef.current?.({ x: e.clientX, y: e.clientY })
-      if (!pos) return
+      // A pull is still holding the button; its release handler owns completion
+      if (isPulling) return
       // Keep React Flow from starting a node drag or selection from this press
       e.preventDefault()
       e.stopPropagation()
-      if (p.type === 'contentType') placeContentTypeAt(p.name, pos)
-      else if (p.type === 'sticky') placeStickyAt(pos)
-      else placeImageAt(p.file, p.imageUrl, pos)
+      placeAtScreen(p, { x: e.clientX, y: e.clientY })
       clearPlacement()
     }
 
     window.addEventListener('mousemove', onMouseMove)
     window.addEventListener('keydown', onKeyDown)
     window.addEventListener('mousedown', onMouseDownCapture, true)
+    window.addEventListener('mouseup', onMouseUp)
     return () => {
       window.removeEventListener('mousemove', onMouseMove)
       window.removeEventListener('keydown', onKeyDown)
       window.removeEventListener('mousedown', onMouseDownCapture, true)
+      window.removeEventListener('mouseup', onMouseUp)
     }
-  }, [isPlacing, placeContentTypeAt, placeImageAt, placeStickyAt, clearCompare, clearIncomingTrace, cancelPendingDelete])
+  }, [isPlacing, isPulling, placeContentTypeAt, placeImageAt, placeStickyAt, clearCompare, clearIncomingTrace, cancelPendingDelete])
 
 
   /**
@@ -1136,11 +1181,11 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
 
   useEffect(() => {
     onReady({
-      addContentType, addImageNode, addSticky, arrangeBoard, arrangeByKind, clearBoard,
+      addContentType, addImageNode, addSticky, pullTool, arrangeBoard, arrangeByKind, clearBoard,
       getExportData, exportImage, importContentTypes, listContentTypes, jumpToType,
     })
   }, [
-    onReady, addContentType, addImageNode, addSticky, arrangeBoard, arrangeByKind, clearBoard,
+    onReady, addContentType, addImageNode, addSticky, pullTool, arrangeBoard, arrangeByKind, clearBoard,
     getExportData, exportImage, importContentTypes, listContentTypes, jumpToType,
   ])
 
@@ -1775,9 +1820,7 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
   return (
     <div
       ref={containerRef}
-      style={{ width: '100%', height: '100%', position: 'relative', cursor: isPlacing ? 'crosshair' : 'default' }}
-      onDragOver={handleToolDragOver}
-      onDrop={handleToolDrop}
+      style={{ width: '100%', height: '100%', position: 'relative', cursor: isPlacing ? (isPulling ? 'grabbing' : 'crosshair') : 'default' }}
     >
       <input
         ref={toolFileInputRef}
@@ -1802,7 +1845,7 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
            clickable via their visible stroke (see globals.css). */
         defaultEdgeOptions={{ interactionWidth: 0 }}
       >
-        <FlowControls fitViewRef={fitViewRef} jumpToRef={jumpToRef} screenToFlowRef={screenToFlowRef} />
+        <FlowControls fitViewRef={fitViewRef} jumpToRef={jumpToRef} screenToFlowRef={screenToFlowRef} getZoomRef={getZoomRef} />
 
         {/* Alignment guides, drawn in flow space so they pan/zoom with the canvas */}
         <ViewportPortal>
@@ -1858,13 +1901,26 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
           }}
         >
           {placementData.type === 'sticky' ? (
+            // Drawn at board scale, so the note being pulled is the note that
+            // lands: zoomed out it shrinks, zoomed in it grows.
             <div
               style={{
-                width: 200,
-                height: 200,
+                width: STICKY_SIZE * ghostPos.zoom,
+                height: STICKY_SIZE * ghostPos.zoom,
                 background: DEFAULT_STICKY_COLOR,
                 borderRadius: 2,
                 boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
+              }}
+            />
+          ) : placementData.type === 'imagePick' ? (
+            <div
+              style={{
+                width: STICKY_SIZE * ghostPos.zoom,
+                height: STICKY_SIZE * 0.75 * ghostPos.zoom,
+                background: 'rgba(255,255,255,0.9)',
+                border: '2px dashed #9ca3af',
+                borderRadius: 8,
+                boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
               }}
             />
           ) : placementData.type === 'contentType' ? (
@@ -1879,7 +1935,9 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
             />
           )}
           <div style={{ textAlign: 'center', marginTop: 4, fontSize: 11, color: '#6b7280', background: 'white', borderRadius: 4, padding: '2px 6px', display: 'inline-block' }}>
-            Click to place · Esc to cancel
+            {isPulling
+              ? placementData.type === 'imagePick' ? 'Release to choose an image · Esc to cancel' : 'Release to place · Esc to cancel'
+              : 'Click to place · Esc to cancel'}
           </div>
         </div>
       )}

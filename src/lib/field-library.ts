@@ -29,11 +29,10 @@ export const DRAG_TYPE = 'application/cm-field'
 export const REORDER_TYPE = 'application/cm-field-reorder'
 
 /**
- * Sticky/Upload Image's drag-out-of-the-sidebar type. Distinct from
- * DRAG_TYPE so the canvas background's drop handler and a content type
- * card's drop handler never pick up each other's drags — a field dropped
- * on the open canvas (not a card) should do nothing, same as a sticky or
- * image dropped on a card should do nothing.
+ * The two board items in the sidebar. They are pulled onto the canvas with
+ * pointer events (see ToolItem in FieldLibrary.tsx and pullTool in
+ * Canvas.tsx), not HTML5 drag-and-drop, so unlike fields they carry no MIME
+ * type: a field dropped on the open canvas still does nothing, and a board
+ * item never enters a card's drop handler in the first place.
  */
-export const TOOL_DRAG_TYPE = 'application/cm-tool'
 export type ToolDragKind = 'sticky' | 'image'
