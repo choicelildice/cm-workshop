@@ -27,6 +27,15 @@ outright rather than letting it go stale.
   is per-session (clears on reload, like tracing today) enough for now?
 ## Recently shipped
 
+- Sticky and Upload Image in the field library are now a stack of notes and
+  a photo frame that you pull from, Miro-style: press, drag, and the top
+  note lifts off the stack and follows the cursor at board scale (it
+  shrinks and grows with zoom, which the old fixed-size ghost never did),
+  landing where you release. Releasing back over the panel puts it back.
+  Implemented as the existing placement mode completing on release instead
+  of on click, rather than HTML5 drag-and-drop, so Esc and the hint label
+  work mid-pull and the note you see is the note you get. Click-to-place
+  still works for both (Oct 2026)
 - Field library panel now also holds Sticky and Upload Image (moved out of
   the toolbar) — drag either onto the board and it lands exactly where
   dropped, same gesture as dragging a field onto a card. Clicking still
