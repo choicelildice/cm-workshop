@@ -57,7 +57,7 @@ export default function WorkshopApp() {
   const [showTour, setShowTour] = useState(false)
   const [showShareMenu, setShowShareMenu] = useState(false)
   const [showShareModal, setShowShareModal] = useState(false)
-  const [imageExportError, setImageExportError] = useState<string | null>(null)
+  const [errorToast, setErrorToast] = useState<string | null>(null)
   const [incoming, setIncoming] = useState<SharePayload | null>(null)
   const [arrangeNote, setArrangeNote] = useState<
     | { mode: 'reference'; cycles: string[][]; orphans: number }
@@ -91,6 +91,13 @@ export default function WorkshopApp() {
     setProjectId(ensureCurrentProject({ name: SAMPLE_PROJECT_NAME, data: buildSampleModel() }))
     setKinds(loadKinds())
 
+    // A link that can't be opened (expired blob, storage outage, made by
+    // another version) is cleared from the URL and the reason shown, so the
+    // user can tell "ask the sender for a new link" from "try again later".
+    const failShare = (err: unknown) => {
+      clearShareFromUrl()
+      setErrorToast(err instanceof Error && err.message ? err.message : 'This share link could not be opened.')
+    }
     // A share link takes precedence over the tour, so the two never stack
     readShareFromUrl().then((encoded) => {
       if (!encoded) {
@@ -98,8 +105,8 @@ export default function WorkshopApp() {
         if (!hasSeenTour()) setShowTour(true)
         return
       }
-      decodeShare(encoded).then(setIncoming).catch(clearShareFromUrl)
-    }).catch(clearShareFromUrl) // e.g. the blob link expired or the fetch failed
+      decodeShare(encoded).then(setIncoming).catch(failShare)
+    }).catch(failShare)
   }, [])
 
 
@@ -161,11 +168,11 @@ export default function WorkshopApp() {
 
   const handleExportImage = useCallback(async () => {
     setShowShareMenu(false)
-    setImageExportError(null)
+    setErrorToast(null)
     try {
       await actionsRef.current?.exportImage()
     } catch (err) {
-      setImageExportError(err instanceof Error ? err.message : 'Could not export the board as an image.')
+      setErrorToast(err instanceof Error ? err.message : 'Could not export the board as an image.')
     }
   }, [])
 
@@ -665,10 +672,10 @@ export default function WorkshopApp() {
         </div>
       </div>
 
-      {imageExportError && (
+      {errorToast && (
         <div className="fixed bottom-4 right-4 z-50 flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-3 py-2 shadow-lg">
-          {imageExportError}
-          <button className="text-red-400 hover:text-red-600" onClick={() => setImageExportError(null)}>
+          {errorToast}
+          <button className="text-red-400 hover:text-red-600" onClick={() => setErrorToast(null)}>
             <X size={13} />
           </button>
         </div>

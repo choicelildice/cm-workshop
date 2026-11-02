@@ -24,9 +24,16 @@ import type { FieldType } from './types'
  * literal here, not derived from the field-type map, so that reordering the
  * map (whose order is only cosmetic) cannot retype fields in existing links.
  */
-const TYPE_ORDER: FieldType[] = [
+const TYPE_ORDER = [
   'richText', 'text', 'number', 'dateTime', 'location', 'media', 'boolean', 'json', 'reference',
-]
+] as const satisfies readonly FieldType[]
+
+// Compile-time exhaustiveness: a FieldType missing from TYPE_ORDER would
+// otherwise encode as index 0 (rich text) with no error anywhere. Adding a
+// member to FieldType without appending it above fails to typecheck here.
+type MissingFromTypeOrder = Exclude<FieldType, (typeof TYPE_ORDER)[number]>
+const typeOrderIsExhaustive: [MissingFromTypeOrder] extends [never] ? true : never = true
+void typeOrderIsExhaustive
 
 /**
  * Legacy kind table. Early v2 links encoded the kind as an index into this
@@ -35,8 +42,14 @@ const TYPE_ORDER: FieldType[] = [
  * string. The table stays so those older links still decode.
  */
 const LEGACY_KIND_ORDER = ['', 'topic', 'assembly', 'config'] as const
-/** Shape of a kind id as produced by makeKindId and the built-in defaults. */
-const KIND_ID = /^[a-z0-9][a-z0-9-]{0,47}$/
+/**
+ * Upper bound on a kind id carried in a link. The receiver's own kinds config
+ * decides what any id means (an unknown one renders as "no kind"), so the only
+ * job here is to refuse a hostile payload's megabyte string, not to second-
+ * guess the shape. makeKindId never truncates, so this must stay far above
+ * any label a person would type.
+ */
+const MAX_KIND_ID_LENGTH = 200
 
 const REQUIRED = 1
 const IS_ARRAY = 2
@@ -100,7 +113,7 @@ export function encodeV2(name: string, nodes: unknown[], edges: unknown[]): Wire
       fields?: { name: string; type: string; required?: boolean; isArray?: boolean; localized?: boolean }[]
     }
     const fields: WireField[] = (d.fields ?? []).map((f) => {
-      const ti = TYPE_ORDER.indexOf(migrateFieldType(f.type))
+      const ti = (TYPE_ORDER as readonly FieldType[]).indexOf(migrateFieldType(f.type))
       const flags =
         (f.required ? REQUIRED : 0) | (f.isArray ? IS_ARRAY : 0) | (f.localized ? LOCALIZED : 0)
       return [f.name ?? '', ti === -1 ? 0 : ti, flags]
@@ -152,7 +165,7 @@ const isArr = (v: unknown): v is unknown[] => Array.isArray(v)
 
 /** Kind id from the wire: a validated id string, a legacy index, or nothing. */
 function decodeKind(raw: unknown): string | undefined {
-  if (typeof raw === 'string') return KIND_ID.test(raw) ? raw : undefined
+  if (typeof raw === 'string') return raw && raw.length <= MAX_KIND_ID_LENGTH ? raw : undefined
   if (typeof raw === 'number') return LEGACY_KIND_ORDER[raw] || undefined
   return undefined
 }
