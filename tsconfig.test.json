@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "outDir": ".test-out",
+    "rootDir": ".",
+    "module": "commonjs",
+    "moduleResolution": "node10",
+    "target": "es2022",
+    "incremental": false,
+    "isolatedModules": false,
+    "plugins": []
+  },
+  "include": ["tests/**/*.ts"]
+}

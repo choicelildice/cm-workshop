@@ -4,10 +4,12 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "npm run check:data-safety && next build",
+    "build": "npm run check:data-safety && npm test && next build",
     "start": "next start",
     "lint": "eslint",
-    "check:data-safety": "node scripts/check-data-safety.mjs"
+    "check:data-safety": "node scripts/check-data-safety.mjs",
+    "test": "tsc -p tsconfig.test.json && node --test \".test-out/tests/**/*.test.js\"",
+    "e2e:safety": "node scripts/e2e/safety-nets.mjs"
   },
   "dependencies": {
     "@phosphor-icons/react": "^2.1.8",
@@ -27,6 +29,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.3.4",
+    "playwright-core": "^1.59.1",
     "tailwindcss": "^4",
     "typescript": "^5"
   }

@@ -8,7 +8,8 @@ import ContentfulExportModal from '@/components/ContentfulExportModal'
 import ContentfulImportModal from '@/components/ContentfulImportModal'
 import ProjectMenu from '@/components/ProjectMenu'
 import KindSettingsModal from '@/components/KindSettingsModal'
-import { ensureCurrentProject, setCurrentProjectId, findProjectByName, createProjectWithData } from '@/lib/projects'
+import { ensureCurrentProject, setCurrentProjectId, findProjectByName, createProjectWithData, snapshotBeforeUpgrade, STORAGE_VERSION, STORAGE_FAILED_EVENT, type StorageFailedDetail } from '@/lib/projects'
+import SaveStatusBanner from '@/components/SaveStatusBanner'
 import { loadKinds } from '@/lib/kind-config'
 import { hasSeenTour } from '@/lib/tour'
 import { buildSampleModel, SAMPLE_PROJECT_NAME } from '@/lib/sample-model'
@@ -79,6 +80,14 @@ export default function WorkshopApp() {
   const typeSearchInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
+    // First thing on a new release: copy every board aside before any code
+    // path that writes one can run. See snapshotBeforeUpgrade.
+    const snap = snapshotBeforeUpgrade()
+    if (snap) {
+      const already = snap.alreadyBackedUp ? ` (${snap.alreadyBackedUp} already backed up by an earlier attempt)` : ''
+      const pruned = snap.pruned ? `; pruned ${snap.pruned} key(s) from older backup generations` : ''
+      console.info(`[cm-workshop] Backed up ${snap.copied} board(s)${already} before first run of storage v${STORAGE_VERSION}${pruned}`)
+    }
     setProjectId(ensureCurrentProject({ name: SAMPLE_PROJECT_NAME, data: buildSampleModel() }))
     setKinds(loadKinds())
 
@@ -115,9 +124,13 @@ export default function WorkshopApp() {
     if (!incoming) return
     const data = { nodes: incoming.nodes, edges: incoming.edges }
     if (mode === 'overwrite' && existingShareTarget) {
-      replaceProjectFromShare(existingShareTarget.id, data)
+      const result = replaceProjectFromShare(existingShareTarget.id, data)
       clearShareFromUrl()
       setIncoming(null)
+      // Storage refused the overwrite (the banner is already up via
+      // STORAGE_FAILED_EVENT): leave the user where they are rather than
+      // switching to a board that still holds its old content.
+      if (!result.ok) return
       const wasAlreadyOpen = existingShareTarget.id === projectId
       switchProject(existingShareTarget.id)
       if (wasAlreadyOpen) setCanvasResetKey((k) => k + 1)
@@ -158,6 +171,38 @@ export default function WorkshopApp() {
 
   const handleCanvasReady = useCallback((actions: CanvasActions) => {
     actionsRef.current = actions
+  }, [])
+
+  // Canvas reports a board that did not load intact (saving paused) or a save
+  // that storage refused (board on screen newer than the stored copy). Either
+  // way the user must be told; this is what tells them. An 'ok' for the same
+  // project clears it.
+  const [saveStatus, setSaveStatus] = useState<{ projectId: string; status: 'load-mismatch' | 'write-failed'; detail?: string } | null>(null)
+  const handleSaveStatus = useCallback((s: { projectId: string; status: 'ok' | 'load-mismatch' | 'write-failed'; detail?: string }) => {
+    setSaveStatus((prev) => {
+      if (s.status === 'ok') {
+        // A successful write anywhere means storage has room again, so a
+        // write-failed banner clears whichever project it was about; a load
+        // mismatch is about one board and clears only for that board.
+        if (!prev) return prev
+        return prev.status === 'write-failed' || prev.projectId === s.projectId ? null : prev
+      }
+      return { projectId: s.projectId, status: s.status, detail: s.detail }
+    })
+  }, [])
+
+  // The floor under every board write, not just Canvas's: projects.ts fires
+  // this whenever storage refuses a write, so a failed new project, duplicate,
+  // share open, sample board or legacy adoption reaches the same banner.
+  useEffect(() => {
+    function onStorageFailed(e: Event) {
+      const { key, detail } = (e as CustomEvent<StorageFailedDetail>).detail
+      const id = key.startsWith('cm-workshop-project-') ? key.slice('cm-workshop-project-'.length) : ''
+      console.error(`[cm-workshop] Storage refused a write to ${key}: ${detail}`)
+      setSaveStatus({ projectId: id, status: 'write-failed', detail })
+    }
+    window.addEventListener(STORAGE_FAILED_EVENT, onStorageFailed)
+    return () => window.removeEventListener(STORAGE_FAILED_EVENT, onStorageFailed)
   }, [])
 
   const handleArrangeByReference = useCallback(() => {
@@ -733,9 +778,20 @@ export default function WorkshopApp() {
       <div className="flex-1 relative overflow-hidden">
         <div className="absolute inset-0" data-tour="canvas">
           {projectId && (
-            <Canvas key={canvasResetKey} projectId={projectId} kinds={kinds} onReady={handleCanvasReady} />
+            <Canvas
+              key={canvasResetKey}
+              projectId={projectId}
+              kinds={kinds}
+              onReady={handleCanvasReady}
+              onSaveStatus={handleSaveStatus}
+            />
           )}
         </div>
+        {/* A write failure is about storage, so it shows whichever project it
+            hit; a load mismatch is about one board, so only while it is open. */}
+        {saveStatus && (saveStatus.status === 'write-failed' || saveStatus.projectId === projectId) && (
+          <SaveStatusBanner status={saveStatus.status} detail={saveStatus.detail} />
+        )}
         <div data-tour="field-library" className="absolute top-0 left-0 z-20">
           <FieldLibrary
             onAddSticky={() => actionsRef.current?.addSticky()}

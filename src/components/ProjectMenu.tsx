@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { Check, ChevronDown, Copy, FolderOpen, Pencil, Plus, Trash2 } from 'lucide-react'
+import { Check, ChevronDown, Copy, DownloadCloud, FolderOpen, Pencil, Plus, Trash2 } from 'lucide-react'
 import {
   createProject,
   deleteProject,
@@ -10,6 +10,7 @@ import {
   renameProject,
   type ProjectMeta,
 } from '@/lib/projects'
+import { downloadAllBoards } from '@/lib/download-boards'
 
 interface Props {
   projectId: string
@@ -174,6 +175,13 @@ export default function ProjectMenu({ projectId, onSwitch }: Props) {
               onClick={handleDuplicate}
             >
               <Copy size={13} className="text-gray-400" /> Duplicate
+            </button>
+            <button
+              className="w-full flex items-center gap-2 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+              onClick={() => { setOpen(false); downloadAllBoards() }}
+              title="Save every project and its board to a JSON file. Images are not included."
+            >
+              <DownloadCloud size={13} className="text-gray-400" /> Download all boards
             </button>
 
             {confirmDelete ? (
