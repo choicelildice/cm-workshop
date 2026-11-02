@@ -296,7 +296,12 @@ export async function readShareFromUrl(): Promise<string | null> {
   if (!id) return null
 
   const res = await fetch(`/api/share?id=${encodeURIComponent(id)}`)
-  if (!res.ok) throw new Error('This link has expired or no longer exists.')
+  if (!res.ok) {
+    // The route distinguishes a missing blob (404) from a storage failure
+    // (502); surface its message rather than calling every failure "expired".
+    const detail = await res.json().catch(() => null)
+    throw new Error(detail?.error || 'This link has expired or no longer exists.')
+  }
   return res.text()
 }
 

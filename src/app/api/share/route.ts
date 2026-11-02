@@ -52,7 +52,19 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Not a valid link.' }, { status: 400 })
   }
 
-  const result = await get(`shares/${id}.txt`, { access: 'private' }).catch(() => null)
+  // get() resolves null for a missing blob and throws for everything else
+  // (bad token, suspended store, network). Only the first is "expired"; the
+  // rest are our problem and must not be reported to the user as theirs.
+  let result
+  try {
+    result = await get(`shares/${id}.txt`, { access: 'private' })
+  } catch (err) {
+    console.error('[share] blob read failed', err instanceof Error ? err.message : err)
+    return NextResponse.json(
+      { error: 'Shared boards can’t be read right now. Try again shortly.' },
+      { status: 502 }
+    )
+  }
   if (!result) {
     return NextResponse.json({ error: 'This link has expired or no longer exists.' }, { status: 404 })
   }
