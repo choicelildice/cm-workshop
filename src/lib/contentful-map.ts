@@ -45,6 +45,15 @@ const MAP: Record<FieldType, Mapping> = {
   reference: { type: 'Link', linkType: 'Entry', arrayItemType: 'Link', arrayItemLinkType: 'Entry' },
 }
 
+/**
+ * Whether a workshop type has a list form in Contentful. Array items may only
+ * be Symbol or Link, so of the nine dialog types just text, media and
+ * reference qualify; anything else marked as a list exports as a single value.
+ */
+export function supportsList(fieldType: FieldType): boolean {
+  return !!MAP[fieldType].arrayItemType
+}
+
 /** Only Symbol fields can be a content type's displayField. */
 export const DISPLAY_FIELD_TYPES = new Set(['Symbol'])
 
@@ -163,8 +172,8 @@ export function toCmaField(opts: {
       ? [{ linkContentType: linkTargets }]
       : undefined
 
-  // A list becomes Array with an `items` descriptor. RichText, Location and
-  // Object have no meaningful list form in Contentful, so they stay scalar.
+  // A list becomes Array with an `items` descriptor. Contentful only allows
+  // Symbol or Link items, so every other type stays scalar (see supportsList).
   if (isArray && m.arrayItemType) {
     return {
       id,
