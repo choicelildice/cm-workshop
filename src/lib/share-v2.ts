@@ -15,14 +15,28 @@
  * never to match the sender's.
  */
 
-import { FIELD_TYPE_IDS, migrateFieldType } from './field-type-meta'
+import { migrateFieldType } from './field-type-meta'
 import type { FieldType } from './types'
 
-/** Field type order is part of the wire format: append only, never reorder. */
-const TYPE_ORDER: FieldType[] = [...FIELD_TYPE_IDS]
+/**
+ * Field type order is part of the wire format. APPEND ONLY, NEVER REORDER:
+ * every link already sent encodes types as positions in this list. It is a
+ * literal here, not derived from the field-type map, so that reordering the
+ * map (whose order is only cosmetic) cannot retype fields in existing links.
+ */
+const TYPE_ORDER: FieldType[] = [
+  'richText', 'text', 'number', 'dateTime', 'location', 'media', 'boolean', 'json', 'reference',
+]
 
-/** Kind order likewise. Index 0 means no kind. */
-const KIND_ORDER = ['', 'topic', 'assembly', 'config'] as const
+/**
+ * Legacy kind table. Early v2 links encoded the kind as an index into this
+ * list, which could only represent the three built-in kinds; a kind created in
+ * Kind Settings came out as "no kind". Kinds are now written as their id
+ * string. The table stays so those older links still decode.
+ */
+const LEGACY_KIND_ORDER = ['', 'topic', 'assembly', 'config'] as const
+/** Shape of a kind id as produced by makeKindId and the built-in defaults. */
+const KIND_ID = /^[a-z0-9][a-z0-9-]{0,47}$/
 
 const REQUIRED = 1
 const IS_ARRAY = 2
@@ -30,8 +44,8 @@ const LOCALIZED = 4
 
 /** [name, typeIndex, flags] */
 type WireField = [string, number, number]
-/** [x, y, label, kindIndex, emoji, fields] */
-type WireType = [number, number, string, number, string, WireField[]]
+/** [x, y, label, kind, emoji, fields]. kind is the kind id ('' for none); older links carry a legacy index instead. */
+type WireType = [number, number, string, string | number, string, WireField[]]
 /** [x, y, w, h, text, color] */
 type WireSticky = [number, number, number, number, string, string]
 /** [sourceTypeIndex, fieldIndex | null, targetTypeIndex] */
@@ -91,12 +105,11 @@ export function encodeV2(name: string, nodes: unknown[], edges: unknown[]): Wire
         (f.required ? REQUIRED : 0) | (f.isArray ? IS_ARRAY : 0) | (f.localized ? LOCALIZED : 0)
       return [f.name ?? '', ti === -1 ? 0 : ti, flags]
     })
-    const ki = KIND_ORDER.indexOf((d.kind ?? '') as (typeof KIND_ORDER)[number])
     return [
       Math.round(n.position.x),
       Math.round(n.position.y),
       d.label ?? 'Untitled',
-      ki === -1 ? 0 : ki,
+      d.kind ?? '',
       d.emoji ?? '',
       fields,
     ]
@@ -136,6 +149,13 @@ export interface DecodedBoard {
 }
 
 const isArr = (v: unknown): v is unknown[] => Array.isArray(v)
+
+/** Kind id from the wire: a validated id string, a legacy index, or nothing. */
+function decodeKind(raw: unknown): string | undefined {
+  if (typeof raw === 'string') return KIND_ID.test(raw) ? raw : undefined
+  if (typeof raw === 'number') return LEGACY_KIND_ORDER[raw] || undefined
+  return undefined
+}
 const str = (v: unknown, fallback = '') => (typeof v === 'string' ? v : fallback)
 const num = (v: unknown, fallback = 0) =>
   typeof v === 'number' && Number.isFinite(v) ? v : fallback
@@ -158,7 +178,7 @@ export function decodeV2(payload: unknown, newId: () => string): DecodedBoard {
 
   for (const raw of p.t) {
     if (!isArr(raw)) continue
-    const [x, y, label, kindIdx, emoji, rawFields] = raw as WireType
+    const [x, y, label, rawKind, emoji, rawFields] = raw as WireType
 
     const nodeId = newId()
     const perField: string[] = []
@@ -185,7 +205,7 @@ export function decodeV2(payload: unknown, newId: () => string): DecodedBoard {
     typeIds.push(nodeId)
     fieldIds.push(perField)
 
-    const kind = KIND_ORDER[num(kindIdx, 0)] || undefined
+    const kind = decodeKind(rawKind)
     nodes.push({
       id: nodeId,
       type: 'contentType',
