@@ -94,7 +94,7 @@ export interface ImageNodeData {
 
 export interface StickyNodeData {
   text: string
-  /** Hex from STICKY_COLORS; maps to a named Miro sticky colour on export. */
+  /** Hex from STICKY_COLORS. */
   color?: string
   onChangeText: (nodeId: string, text: string) => void
   onChangeColor: (nodeId: string, color: string) => void

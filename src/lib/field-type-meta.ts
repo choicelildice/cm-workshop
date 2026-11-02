@@ -2,7 +2,7 @@ import { FieldType } from './types'
 
 /**
  * Labels and colours only — deliberately free of React imports so server code
- * (the Miro export route) can use it. Icons live in `field-types.ts`, which
+ * (the API routes) can use it. Icons live in `field-types.ts`, which
  * pulls in @phosphor-icons/react and is therefore client-only.
  */
 /**

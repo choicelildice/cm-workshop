@@ -1055,15 +1055,9 @@ export default function Canvas({ projectId, kinds, onReady, onSaveStatus }: Canv
     const exportEdges = edges.map((e) => ({
       id: e.id, source: e.source, target: e.target, sourceHandle: e.sourceHandle ?? null,
     }))
-    // Sticky notes go to Miro as real sticky notes; Contentful ignores them.
-    const stickies = nodes
-      .filter((n) => n.type === 'sticky')
-      .map((n) => {
-        const d = n.data as unknown as StickyNodeData
-        return { id: n.id, position: n.position, text: d.text, color: d.color }
-      })
-      .filter((s) => s.text.trim().length > 0)
-    return { nodes: exportNodes, edges: exportEdges, stickies }
+    // Sticky notes and images are workshop scaffolding, not model, so the
+    // Contentful export never sees them.
+    return { nodes: exportNodes, edges: exportEdges }
   }, [nodes, edges])
 
   /**
