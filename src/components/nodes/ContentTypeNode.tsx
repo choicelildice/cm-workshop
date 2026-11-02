@@ -358,10 +358,23 @@ export default function ContentTypeNode({ id, data: rawData }: NodeProps) {
   // so the arrow's logical attachment is already correct — but without this,
   // its drawn position stays at the handle's old row until something else
   // happens to trigger a re-measure (e.g. resizing the window).
+  //
+  // Keyed on the ORDER of field ids, not the fields array's identity, and
+  // skipped on mount. React Flow already measures every card once when it
+  // mounts (through a single batched ResizeObserver), and adding or removing
+  // a field changes the card's height, which that observer also catches. The
+  // only case it misses is a pure reorder, which is what this is for. The
+  // old version fired for every card on every board load, each call forcing
+  // its own measurement pass and a full node-change round trip, so a board
+  // of N types paid N separate re-renders before it was usable.
   const updateNodeInternals = useUpdateNodeInternals()
+  const fieldOrder = data.fields.map((f) => f.id).join(',')
+  const prevFieldOrder = useRef(fieldOrder)
   useEffect(() => {
+    if (prevFieldOrder.current === fieldOrder) return
+    prevFieldOrder.current = fieldOrder
     updateNodeInternals(id)
-  }, [id, data.fields, updateNodeInternals])
+  }, [id, fieldOrder, updateNodeInternals])
 
   const [headerHovered, setHeaderHovered] = useState(false)
   const [renaming, setRenaming] = useState(false)
