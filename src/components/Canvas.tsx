@@ -36,13 +36,28 @@ import DeleteTypeConfirm, { type PendingDelete } from '@/components/DeleteTypeCo
 import { FIELD_TYPES } from '@/lib/field-types'
 import { TOOL_DRAG_TYPE, type ToolDragKind } from '@/lib/field-library'
 import { DEFAULT_STICKY_COLOR } from '@/lib/sticky-colors'
-import { loadProjectData, saveProjectData, allImageNodeIds } from '@/lib/projects'
+import { loadProjectData, saveProjectData, allImageNodeIds, type ProjectData } from '@/lib/projects'
+import { checkLoadIntegrity } from '@/lib/load-integrity'
+
+export interface SaveStatus {
+  projectId: string
+  status: 'ok' | 'load-mismatch' | 'write-failed'
+  detail?: string
+}
 
 interface CanvasProps {
   /** Active project. Changing it flushes the old board and loads the new one. */
   projectId: string
   /** Configured content type kinds, passed into every CT node. */
   kinds: KindDef[]
+  /**
+   * Save status for a project. 'load-mismatch': the board did not load intact
+   * (lib/load-integrity), saving is paused until reload and the stored copy is
+   * left as it was. 'write-failed': storage refused a save (full or
+   * unavailable), so the board on screen is newer than the stored copy. 'ok'
+   * follows a clean load or a successful save and clears either.
+   */
+  onSaveStatus?: (status: SaveStatus) => void
   onReady: (actions: {
     addContentType: (name: string) => void
     addImageNode: (file: File) => void
@@ -139,7 +154,7 @@ const nodeTypes = {
   sticky: StickyNode,
 }
 
-export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
+export default function Canvas({ projectId, kinds, onReady, onSaveStatus }: CanvasProps) {
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([])
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([])
   const [addFieldTarget, setAddFieldTarget] = useState<string | null>(null)
@@ -1145,6 +1160,44 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
   ])
 
   const restoredRef = useRef(false)
+  /**
+   * Set when the open project did not survive loading intact. Every path
+   * that writes a board (debounced save, switch flush, tab-close flush)
+   * checks it, so a lossy load can never overwrite the stored copy. Reset
+   * at the start of each load; cleared only by loading cleanly.
+   */
+  const savePausedRef = useRef(false)
+  // Synced in an effect, not during render, which is what the refs lint rule
+  // asks for. The prop cannot simply sit in the effects' dependency lists on
+  // this branch: the project-load effect's list is a line another open branch
+  // rewrote, and this branch must stay independent of it to merge first.
+  // Once both are in, collapse this into a plain dependency.
+  const onSaveStatusRef = useRef(onSaveStatus)
+  useEffect(() => {
+    onSaveStatusRef.current = onSaveStatus
+  }, [onSaveStatus])
+
+  /**
+   * Every board write goes through here so a failed one is never silent.
+   * Storage being full is reported the same way a lossy load is: through the
+   * host's banner, with the board on screen left intact for Download.
+   */
+  const persist = useCallback((id: string, data: ProjectData, allowEmpty: boolean) => {
+    const result = saveProjectData(id, data, { allowEmpty })
+    if (result.ok) {
+      onSaveStatusRef.current?.({ projectId: id, status: 'ok' })
+    } else if (result.reason === 'storage-failed') {
+      console.error(`[cm-workshop] Could not save project ${id}: ${result.detail}`)
+      onSaveStatusRef.current?.({ projectId: id, status: 'write-failed', detail: result.detail })
+    }
+    // 'refused-empty' is the guard doing its job; nothing to tell the user
+  }, [])
+  // The project-load effect flushes the outgoing board through this ref so
+  // its dependency list, which gates when a load runs, need not change.
+  const persistRef = useRef(persist)
+  useEffect(() => {
+    persistRef.current = persist
+  }, [persist])
   const fitViewRef = useRef<(() => void) | null>(null)
   const jumpToRef = useRef<((nodeId: string) => void) | null>(null)
 
@@ -1349,13 +1402,13 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
   // Persist the board, debounced so a drag produces one write on settle
   // rather than one per animation frame.
   useEffect(() => {
-    if (!restoredRef.current) return
+    if (!restoredRef.current || savePausedRef.current) return
     const target = loadedProjectRef.current
     if (!target) return
 
     saveTimerRef.current = setTimeout(() => {
       const allowEmpty = clearIntentRef.current
-      saveProjectData(target, { nodes: serializeNodes(nodes), edges }, { allowEmpty })
+      persist(target, { nodes: serializeNodes(nodes), edges }, allowEmpty)
       clearIntentRef.current = false
       saveTimerRef.current = null
     }, 400)
@@ -1363,7 +1416,7 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
     return () => {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
     }
-  }, [nodes, edges, serializeNodes])
+  }, [nodes, edges, serializeNodes, persist])
 
   // Load the active project; on switch, flush the outgoing one first
   useEffect(() => {
@@ -1376,7 +1429,10 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
         clearTimeout(saveTimerRef.current)
         saveTimerRef.current = null
       }
-      saveProjectData(previous, { nodes: serializeNodes(nodesRef.current), edges: edgesRef.current }, { allowEmpty: clearIntentRef.current })
+      // Never flush a board that did not load intact
+      if (!savePausedRef.current) {
+        persistRef.current(previous, { nodes: serializeNodes(nodesRef.current), edges: edgesRef.current }, clearIntentRef.current)
+      }
     }
 
     // History belongs to one board; carrying it across a switch would let an
@@ -1393,12 +1449,14 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
     // Block saving until the incoming board is in memory, so an empty canvas
     // can't overwrite the project we're about to read.
     restoredRef.current = false
+    savePausedRef.current = false
     loadedProjectRef.current = projectId
 
     let cancelled = false
     const load = async () => {
       const data = loadProjectData(projectId)
       const parsed = (data?.nodes ?? []) as Node[]
+      const storedEdges = (data?.edges ?? []) as Edge[]
 
       const restored = await Promise.all(
         parsed.map(async (n) => {
@@ -1432,8 +1490,25 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
       // A newer switch may have started while we awaited the image reads
       if (cancelled || loadedProjectRef.current !== projectId) return
 
+      // Would saving this board right now write back what we just read?
+      // If not, the load lost something, and saving is paused for this
+      // project so the stored copy stays as it is (see lib/load-integrity).
+      // Nodes only: edges go from storage into state untouched, so there is
+      // nothing to compare. If this load ever starts transforming edges, pass
+      // storedEdges and the transformed edges here as well.
+      const integrity = checkLoadIntegrity({ nodes: parsed }, { nodes: serializeNodes(restored) })
+      if (!integrity.ok) {
+        savePausedRef.current = true
+        console.error(`[cm-workshop] Project ${projectId} did not load intact (${integrity.detail}). Saving paused.`)
+      }
+      onSaveStatusRef.current?.(
+        integrity.ok
+          ? { projectId, status: 'ok' }
+          : { projectId, status: 'load-mismatch', detail: integrity.detail }
+      )
+
       setNodes(restored)
-      setEdges((data?.edges ?? []) as Edge[])
+      setEdges(storedEdges)
       restoredRef.current = true
       setTimeout(() => fitViewRef.current?.(), 50)
     }
@@ -1484,14 +1559,14 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
   // before closing would otherwise never reach storage.
   useEffect(() => {
     function flush() {
-      if (!restoredRef.current) return
+      if (!restoredRef.current || savePausedRef.current) return
       const target = loadedProjectRef.current
       if (!target) return
       if (saveTimerRef.current) {
         clearTimeout(saveTimerRef.current)
         saveTimerRef.current = null
       }
-      saveProjectData(target, { nodes: serializeNodes(nodesRef.current), edges: edgesRef.current }, { allowEmpty: clearIntentRef.current })
+      persist(target, { nodes: serializeNodes(nodesRef.current), edges: edgesRef.current }, clearIntentRef.current)
     }
 
     window.addEventListener('beforeunload', flush)
@@ -1501,7 +1576,7 @@ export default function Canvas({ projectId, kinds, onReady }: CanvasProps) {
       window.removeEventListener('beforeunload', flush)
       window.removeEventListener('pagehide', flush)
     }
-  }, [serializeNodes])
+  }, [serializeNodes, persist])
 
   // Apply alignment snapping by correcting the position change before React
   // Flow commits it, rather than overriding position mid-drag (which fights
