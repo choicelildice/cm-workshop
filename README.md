@@ -43,9 +43,11 @@ written.
 inside a frame, sized to match content already there.
 
 **Share a link.** The Share button packs the whole model into the URL fragment,
-so anyone with the link can open a copy without an account or a backend. A
-realistic twelve-type board comes out around 1.5KB of URL. Because it lives in
-the fragment, board data is never sent to the server. Links are snapshots rather
+so anyone with the link (and the access code, if one is set) can open a copy. A
+realistic twelve-type board comes out around 1.5KB of URL and never leaves the
+browser. Boards too large for a fragment, roughly 100 types or more, are stored
+as a private blob in Vercel Blob instead and the link carries only its id;
+opening one goes through the app's login-gated API. Links are snapshots rather
 than live boards, and images are left out (too large for a URL).
 
 **Projects.** Multiple named boards, autosaved locally. Images are stored in

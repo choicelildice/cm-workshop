@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/require-auth'
 import { migrateFieldType } from '@/lib/field-type-meta'
-import { DISPLAY_FIELD_TYPES, toCmaField, toId, uniqueId, type CmaField } from '@/lib/contentful-map'
+import { DISPLAY_FIELD_TYPES, supportsList, toCmaField, toId, uniqueId, type CmaField } from '@/lib/contentful-map'
 import type { FieldType } from '@/lib/types'
 
 const CMA = 'https://api.contentful.com'
@@ -91,7 +91,7 @@ function buildPlan(
       if (fieldType === 'reference' && linkTargets.length === 0) {
         warnings.push(`"${f.name}" has no connection drawn, so it accepts any entry type`)
       }
-      if (f.isArray && (fieldType === 'richText' || fieldType === 'location' || fieldType === 'json')) {
+      if (f.isArray && !supportsList(fieldType)) {
         warnings.push(`"${f.name}" cannot be a list in Contentful; created as a single value`)
       }
 
