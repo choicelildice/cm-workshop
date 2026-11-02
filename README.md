@@ -2,7 +2,7 @@
 
 A canvas for running content modelling workshops. Sketch content types and their
 fields, draw the references between them, then push the result straight into
-Contentful — or into Miro when the output needs to live on a whiteboard.
+Contentful.
 
 Built to replace the usual Miro-and-sticky-notes workflow, where the model has to
 be re-typed by hand afterwards.
@@ -17,8 +17,7 @@ by dragging. Drag from a reference field to another type to draw the
 relationship.
 
 **Sticky notes.** Drop notes on the board for open questions and decisions, in
-eight colours. They travel to Miro as real sticky notes and are ignored by the
-Contentful export.
+eight colours. The Contentful export ignores them.
 
 **Field types mirror Contentful.** The library holds exactly the nine types
 Contentful's "Add new field" dialog offers, using the same Phosphor icons the web
@@ -38,9 +37,6 @@ clear of whatever is already on the board.
 API. Reference arrows become real `linkContentType` validations. You review a
 full plan — ids, field types, link targets, warnings — before anything is
 written.
-
-**Export to Miro.** Renders the model onto a board, one shape per content type
-inside a frame, sized to match content already there.
 
 **Share a link.** The Share button packs the whole model into the URL fragment,
 so anyone with the link (and the access code, if one is set) can open a copy. A
@@ -125,15 +121,13 @@ throttled.
 
 ## Credentials
 
-**No keys are stored in this repository.** Both integrations ask for credentials
-at runtime and keep them in your browser's `localStorage` only:
+**No keys are stored in this repository.** The Contentful integration asks for
+credentials at runtime and keeps them in your browser's `localStorage` only: a
+Content Management API token (Settings → API keys → Content management tokens),
+plus your space id and environment.
 
-- **Contentful** — a Content Management API token (Settings → API keys → Content
-  management tokens), plus your space id and environment.
-- **Miro** — either an OAuth client id and secret (a short-lived cookie holds
-  them during the OAuth round-trip), or a pasted access token.
-
-Nothing is sent anywhere except to Contentful's and Miro's own APIs.
+Nothing is sent anywhere except to Contentful's own API, and to Vercel Blob for
+share links too large to fit in a URL.
 
 ## Notes on the Contentful export
 
