@@ -1574,7 +1574,20 @@ export default function Canvas({ projectId, kinds, onReady, onSaveStatus }: Canv
     }
 
     load()
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+      // If the load never finished, give the claim back. React StrictMode
+      // (dev only) runs this cleanup straight after the first run and then
+      // re-runs the effect; without this the re-run saw the project already
+      // claimed, returned early, and the board stayed empty for the whole
+      // session. The same guard matters in production when projectId changes
+      // again mid-load: the in-memory nodes still belong to `previous`, so
+      // the next run must flush them under that id, not the one that never
+      // arrived.
+      if (!restoredRef.current && loadedProjectRef.current === projectId) {
+        loadedProjectRef.current = previous
+      }
+    }
   }, [projectId, makeContentTypeData, handleDeleteImage, makeStickyData, setNodes, setEdges, serializeNodes, clearCompare, clearIncomingTrace, cancelPendingDelete])
 
   // Delete selected nodes/edges.
