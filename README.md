@@ -161,8 +161,9 @@ Fields marked localized carry the CMA's `localized` flag, so each locale holds
 its own value.
 
 A field marked as a list becomes `Array` with the matching `items` descriptor.
-Rich text, Location, and JSON have no list form in Contentful and stay scalar
-(the plan warns when this applies).
+Contentful arrays only hold text or links, so only Text, Media and Reference can
+be lists; any other type marked as a list stays scalar (the plan warns when this
+applies).
 
 Importing collapses the wider CMA set back down: `Symbol` and `Text` both arrive
 as Text, `Integer` and `Number` both as Number, and an `Array` is unwrapped to
