@@ -1,11 +1,10 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { memo, useState, useRef, useEffect } from 'react'
 import { NodeProps, Handle, Position, useUpdateNodeInternals } from '@xyflow/react'
 import { Trash2, X, Copy, Clipboard, ArrowRight, Check, Palette, Pencil, Smile } from 'lucide-react'
 import { ContentTypeNodeData, ContentField, FieldType } from '@/lib/types'
 import {
-  FIELD_TYPES,
   FIELD_TYPE_OPTIONS,
   COMMON_EMOJI,
   resolveTypeColors,
@@ -14,10 +13,11 @@ import {
   ICON_SIZE,
 } from '@/lib/field-types'
 import { DRAG_TYPE, REORDER_TYPE, LibraryField } from '@/lib/field-library'
+import TypeBadge from '@/components/TypeBadge'
 
 interface PendingField { type: FieldType; isArray: boolean; name: string; required: boolean; localized: boolean }
 
-function FieldRow({
+function FieldRowInner({
   field,
   nodeId,
   index,
@@ -50,7 +50,6 @@ function FieldRow({
   // actually under the pointer, so whether the gesture began on the connection
   // handle has to be recorded at mousedown time.
   const startedOnConnectRef = useRef(false)
-  const meta = FIELD_TYPES[field.type]
   const isLinkable = field.type === 'reference'
 
   // A click that moved is a drag-to-reorder, not a trace
@@ -137,18 +136,16 @@ function FieldRow({
 
   // ── Editing view ───────────────────────────────────────────────────
   if (editing) {
-    const EditIcon = FIELD_TYPES[field.type].Icon
     return (
       <div className="nodrag px-2 py-1.5 bg-blue-50 border-y border-blue-100 relative">
         <div className="flex items-center gap-1.5 mb-1.5">
           <button
-            className="nodrag flex-shrink-0 inline-flex items-center justify-center rounded text-white"
-            style={{ backgroundColor: FIELD_TYPES[field.type].color, width: 24, height: 22 }}
+            className="nodrag flex-shrink-0 inline-flex rounded"
             onMouseDown={(e) => e.stopPropagation()}
             onClick={(e) => { e.stopPropagation(); setTypeOpen((v) => !v) }}
             title="Change field type"
           >
-            <EditIcon size={ICON_SIZE.small} weight={ICON_WEIGHT} />
+            <TypeBadge type={field.type} isArray={field.isArray} size="small" title="Change field type" />
           </button>
           <input
             ref={editRef}
@@ -273,13 +270,7 @@ function FieldRow({
           }}
         />
       )}
-      <span
-        className="flex-shrink-0 inline-flex items-center justify-center rounded text-white"
-        style={{ backgroundColor: meta.color, width: 22, height: 20 }}
-        title={meta.label}
-      >
-        <meta.Icon size={ICON_SIZE.tiny} weight={ICON_WEIGHT} />
-      </span>
+      <TypeBadge type={field.type} isArray={field.isArray} size="tiny" />
       <span className="text-xs text-gray-700 flex-1 truncate">{field.name}</span>
       {field.localized && (
         <span
@@ -349,7 +340,12 @@ function FieldRow({
   )
 }
 
-export default function ContentTypeNode({ id, data: rawData }: NodeProps) {
+// Memoised so a card re-render (hover state on the header, a trace colour
+// on one row) doesn't re-render every other row. The callbacks come from the
+// node's data and are stable across renders, so the shallow compare holds.
+const FieldRow = memo(FieldRowInner)
+
+function ContentTypeNode({ id, data: rawData }: NodeProps) {
   const data = rawData as unknown as ContentTypeNodeData
 
   // React Flow caches each handle's measured position for performance and
@@ -358,10 +354,23 @@ export default function ContentTypeNode({ id, data: rawData }: NodeProps) {
   // so the arrow's logical attachment is already correct — but without this,
   // its drawn position stays at the handle's old row until something else
   // happens to trigger a re-measure (e.g. resizing the window).
+  //
+  // Keyed on the ORDER of field ids, not the fields array's identity, and
+  // skipped on mount. React Flow already measures every card once when it
+  // mounts (through a single batched ResizeObserver), and adding or removing
+  // a field changes the card's height, which that observer also catches. The
+  // only case it misses is a pure reorder, which is what this is for. The
+  // old version fired for every card on every board load, each call forcing
+  // its own measurement pass and a full node-change round trip, so a board
+  // of N types paid N separate re-renders before it was usable.
   const updateNodeInternals = useUpdateNodeInternals()
+  const fieldOrder = data.fields.map((f) => f.id).join(',')
+  const prevFieldOrder = useRef(fieldOrder)
   useEffect(() => {
+    if (prevFieldOrder.current === fieldOrder) return
+    prevFieldOrder.current = fieldOrder
     updateNodeInternals(id)
-  }, [id, data.fields, updateNodeInternals])
+  }, [id, fieldOrder, updateNodeInternals])
 
   const [headerHovered, setHeaderHovered] = useState(false)
   const [renaming, setRenaming] = useState(false)
@@ -735,18 +744,7 @@ export default function ContentTypeNode({ id, data: rawData }: NodeProps) {
         {pending && (
           <div className="px-2 py-1.5 bg-blue-50 border-t border-blue-100">
             <div className="flex items-center gap-1.5 mb-1.5">
-              {(() => {
-                const PendingIcon = FIELD_TYPES[pending.type].Icon
-                return (
-                  <span
-                    className="flex-shrink-0 inline-flex items-center justify-center rounded text-white"
-                    style={{ backgroundColor: FIELD_TYPES[pending.type].color, width: 24, height: 22 }}
-                    title={FIELD_TYPES[pending.type].label}
-                  >
-                    <PendingIcon size={ICON_SIZE.small} weight={ICON_WEIGHT} />
-                  </span>
-                )
-              })()}
+              <TypeBadge type={pending.type} isArray={pending.isArray} size="small" />
               <input
                 ref={pendingInputRef}
                 type="text"
@@ -830,3 +828,8 @@ export default function ContentTypeNode({ id, data: rawData }: NodeProps) {
     </div>
   )
 }
+
+// React Flow re-renders a node wrapper whenever its slice of the store
+// changes; memo keeps that from reaching this card unless its own props
+// (data, position, selection) actually changed.
+export default memo(ContentTypeNode)

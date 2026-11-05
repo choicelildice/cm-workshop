@@ -3,12 +3,10 @@
 import { useRef, useState } from 'react'
 import { GripVertical, ImageIcon } from 'lucide-react'
 import { DRAG_TYPE, FIELD_LIBRARY, LibraryField, type ToolDragKind } from '@/lib/field-library'
-import { FIELD_TYPES, ICON_WEIGHT, ICON_SIZE } from '@/lib/field-types'
 import { STICKY_COLORS, DEFAULT_STICKY_COLOR } from '@/lib/sticky-colors'
+import TypeBadge, { typeLabel } from '@/components/TypeBadge'
 
 function FieldItem({ field }: { field: LibraryField }) {
-  const meta = FIELD_TYPES[field.type]
-
   function onDragStart(e: React.DragEvent) {
     e.dataTransfer.setData(DRAG_TYPE, JSON.stringify(field))
     e.dataTransfer.effectAllowed = 'copy'
@@ -19,17 +17,13 @@ function FieldItem({ field }: { field: LibraryField }) {
       draggable
       onDragStart={onDragStart}
       className="flex items-center gap-2 px-2 py-2.5 rounded cursor-grab active:cursor-grabbing hover:bg-gray-100 transition-colors group select-none"
-      title={`${meta.label}${field.required ? ' · Required' : ''}${field.isArray ? ' · Array' : ''}`}
+      title={`${typeLabel(field.type, field.isArray)}${field.required ? ' · Required' : ''}`}
     >
       <GripVertical size={11} className="text-gray-300 group-hover:text-gray-400 flex-shrink-0" />
-      <span
-        className="flex-shrink-0 inline-flex items-center justify-center rounded text-white"
-        style={{ backgroundColor: meta.color, width: 24, height: 22 }}
-      >
-        <meta.Icon size={ICON_SIZE.small} weight={ICON_WEIGHT} />
-      </span>
+      {/* Same stacked chip the cards use for a list field, so the sidebar and
+          the board say it the same way. */}
+      <TypeBadge type={field.type} isArray={field.isArray} size="small" />
       <span className="text-[15px] text-gray-700 truncate flex-1">{field.name}</span>
-      {field.isArray && <span className="text-[10px] text-gray-400 flex-shrink-0">[ ]</span>}
       {field.required && <span className="text-[10px] text-red-400 flex-shrink-0">*</span>}
     </div>
   )

@@ -176,6 +176,10 @@ export default function Canvas({ projectId, kinds, onReady, onSaveStatus }: Canv
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([])
   const [addFieldTarget, setAddFieldTarget] = useState<string | null>(null)
   const [clipboard, setClipboard] = useState<ContentField | null>(null)
+  // True while exportImage captures the board. Off-screen cards are normally
+  // not mounted at all (onlyRenderVisibleElements), which keeps a large model
+  // responsive, but a PNG of the whole board needs every card in the DOM.
+  const [exporting, setExporting] = useState(false)
 
   // What is being placed, or null when not in placement mode
   const [placement, setPlacement] = useState<PlacementData | null>(null)
@@ -1138,6 +1142,13 @@ export default function Canvas({ projectId, kinds, onReady, onSaveStatus }: Canv
     // sliver and leaving the real content adrift in a mostly-blank image.
     const { x, y, zoom } = getViewportForBounds(bounds, width, height, 0.1, 2, `${padding}px`)
 
+    // Mount the off-screen cards before capturing. Two frames: one for React
+    // to commit the un-culled node list, one for the browser to lay it out.
+    setExporting(true)
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+    )
+
     const previousTransform = viewportEl.style.transform
     viewportEl.style.transform = `translate(${x}px, ${y}px) scale(${zoom})`
     try {
@@ -1153,6 +1164,7 @@ export default function Canvas({ projectId, kinds, onReady, onSaveStatus }: Canv
       link.click()
     } finally {
       viewportEl.style.transform = previousTransform
+      setExporting(false)
     }
   }, [])
 
@@ -1562,7 +1574,20 @@ export default function Canvas({ projectId, kinds, onReady, onSaveStatus }: Canv
     }
 
     load()
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+      // If the load never finished, give the claim back. React StrictMode
+      // (dev only) runs this cleanup straight after the first run and then
+      // re-runs the effect; without this the re-run saw the project already
+      // claimed, returned early, and the board stayed empty for the whole
+      // session. The same guard matters in production when projectId changes
+      // again mid-load: the in-memory nodes still belong to `previous`, so
+      // the next run must flush them under that id, not the one that never
+      // arrived.
+      if (!restoredRef.current && loadedProjectRef.current === projectId) {
+        loadedProjectRef.current = previous
+      }
+    }
   }, [projectId, makeContentTypeData, handleDeleteImage, makeStickyData, setNodes, setEdges, serializeNodes, clearCompare, clearIncomingTrace, cancelPendingDelete])
 
   // Delete selected nodes/edges.
@@ -1658,9 +1683,13 @@ export default function Canvas({ projectId, kinds, onReady, onSaveStatus }: Canv
         }
         // Snap only for a single-node drag; multi-select keeps relative layout
         if (posChanges.length === 1) {
-          const dragged = nodes.find((n) => n.id === drag.id)
+          // Read through the ref rather than depending on `nodes`, so this
+          // handler keeps one identity across a drag instead of being rebuilt
+          // (and handed back to React Flow) on every frame.
+          const all = nodesRef.current
+          const dragged = all.find((n) => n.id === drag.id)
           if (dragged) {
-            const { position, guides: g } = snapPosition(dragged, drag.position, nodes)
+            const { position, guides: g } = snapPosition(dragged, drag.position, all)
             drag.position = position
             lastSnapRef.current = { id: drag.id, position }
             setGuides(g)
@@ -1680,7 +1709,7 @@ export default function Canvas({ projectId, kinds, onReady, onSaveStatus }: Canv
 
       onNodesChange(changes)
     },
-    [nodes, onNodesChange]
+    [onNodesChange]
   )
 
   /**
@@ -1913,6 +1942,13 @@ export default function Canvas({ projectId, kinds, onReady, onSaveStatus }: Canv
         onConnect={onConnect}
         nodeTypes={nodeTypes}
         deleteKeyCode={null}
+        /* Only cards in (or partly in) the viewport are mounted. Each card is
+           a heavy piece of DOM (a draggable row, icon and handle per field),
+           so on a large model this is the difference between pan/zoom at
+           60fps and a visible stutter. React Flow still renders every card
+           once until it has been measured, so fitView, layout and bounds all
+           see real sizes. Switched off during PNG export (see exportImage). */
+        onlyRenderVisibleElements={!exporting}
         minZoom={0.1}
         maxZoom={8}
         panOnDrag={!isPlacing}
