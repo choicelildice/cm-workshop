@@ -5,6 +5,9 @@ import { NodeProps, Handle, Position } from '@xyflow/react'
 import { Trash2 } from 'lucide-react'
 import { ImageNodeData } from '@/lib/types'
 
+/** Board-space width of an image card; the placement ghost scales this by zoom. */
+export const IMAGE_NODE_WIDTH = 320
+
 export default function ImageNode({ id, data: rawData }: NodeProps) {
   const data = rawData as unknown as ImageNodeData
   const [hovered, setHovered] = useState(false)
@@ -12,7 +15,7 @@ export default function ImageNode({ id, data: rawData }: NodeProps) {
   return (
     <div
       className="relative rounded-lg overflow-hidden border border-gray-200 shadow-md bg-white"
-      style={{ width: 320 }}
+      style={{ width: IMAGE_NODE_WIDTH }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
