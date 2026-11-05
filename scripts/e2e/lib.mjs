@@ -26,9 +26,11 @@ export function launch() {
 /**
  * A fresh context and page, logged in and on the board. 1920 wide because the
  * toolbar collapses into a menu under 1760px and hides the add-type input.
+ * `hasTouch` gives the context a touchscreen (navigator.maxTouchPoints > 0)
+ * for scripts that drive the touch path.
  */
-export async function openApp(browser, base, { acceptDownloads = false } = {}) {
-  const context = await browser.newContext({ viewport: { width: 1920, height: 1080 }, acceptDownloads })
+export async function openApp(browser, base, { acceptDownloads = false, hasTouch = false } = {}) {
+  const context = await browser.newContext({ viewport: { width: 1920, height: 1080 }, acceptDownloads, hasTouch })
   const page = await context.newPage()
   await page.goto(`${base}/login`)
   if (page.url().includes('/login')) {

@@ -27,20 +27,14 @@ outright rather than letting it go stale.
   is per-session (clears on reload, like tracing today) enough for now?
 ## Recently shipped
 
-- Sticky and Upload Image in the field library are now a stack of notes and
-  a photo frame that you pull from, Miro-style: press, drag, and the top
-  note lifts off the stack and follows the cursor at board scale (it
-  shrinks and grows with zoom, which the old fixed-size ghost never did),
-  landing where you release. Releasing back over the panel puts it back.
-  Implemented as the existing placement mode completing on release instead
-  of on click, rather than HTML5 drag-and-drop, so Esc and the hint label
-  work mid-pull and the note you see is the note you get. Click-to-place
-  still works for both (Oct 2026)
-- Field library panel now also holds Sticky and Upload Image (moved out of
-  the toolbar) — drag either onto the board and it lands exactly where
-  dropped, same gesture as dragging a field onto a card. Clicking still
-  works too. Arrange and Kinds stayed in the toolbar: neither is a
-  placeable object, so there's no drag-out version of either (Oct 2026)
+- Sticky and Upload Image moved out of the toolbar into the field library as
+  a stack of notes and a photo frame you pull from, Miro-style: press, drag,
+  the top note lifts and follows the pointer at board scale, landing where
+  released (back over the panel puts it back); works with touch as well as a
+  mouse. Built on the existing placement mode completing on release rather
+  than HTML5 drag-and-drop, so Esc and the hint label work mid-pull; clicking
+  still arms click-to-place. Arrange and Kinds stayed in the toolbar: neither
+  is a placeable object (Oct 2026)
 - Field library floats over the canvas's top-left corner instead of
   sitting in its own column, and stops at its own height instead of
   trailing an invisible dead zone down the screen; dropped its search box
