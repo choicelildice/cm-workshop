@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 import { GripVertical, ImageIcon } from 'lucide-react'
 import { DRAG_TYPE, FIELD_LIBRARY, LibraryField, type ToolDragKind } from '@/lib/field-library'
 import { FIELD_TYPES, ICON_WEIGHT, ICON_SIZE } from '@/lib/field-types'
@@ -39,6 +39,36 @@ function FieldItem({ field }: { field: LibraryField }) {
 const GLYPH_W = 26
 const GLYPH_H = 24
 
+const LIFT_TRANSITION = 'transform 140ms ease, opacity 140ms ease'
+const LIFT_TRANSFORM = 'translate(2px, -9px) rotate(-4deg)'
+const NOTE_SHADOW = '0 1px 1.5px rgba(0,0,0,0.12)'
+
+/** The top note or frame slides up and fades while it is being pulled off. */
+function liftStyle(lifted: boolean): React.CSSProperties {
+  return {
+    transition: LIFT_TRANSITION,
+    transform: lifted ? LIFT_TRANSFORM : 'none',
+    opacity: lifted ? 0 : 1,
+  }
+}
+
+const BACK_COLOR = STICKY_COLORS.find((c) => c.name === 'Blue')?.value ?? DEFAULT_STICKY_COLOR
+const MID_COLOR = STICKY_COLORS.find((c) => c.name === 'Pink')?.value ?? DEFAULT_STICKY_COLOR
+
+/** One note in the stack glyph; `extra` positions it and, for the top one, lifts it. */
+function note(bg: string, extra: React.CSSProperties): React.CSSProperties {
+  return {
+    position: 'absolute',
+    width: 16,
+    height: 16,
+    background: bg,
+    border: '1px solid rgba(17,27,43,0.18)',
+    borderRadius: 1.5,
+    boxShadow: NOTE_SHADOW,
+    ...extra,
+  }
+}
+
 /**
  * A short stack of notes, Miro-style. The two behind peek out in other
  * colours as a hint that stickies come in more than yellow. While a note is
@@ -46,31 +76,11 @@ const GLYPH_H = 24
  * stack visibly gives one up and takes it back if the pull is cancelled.
  */
 function StickyStackGlyph({ lifted }: { lifted: boolean }) {
-  const back = STICKY_COLORS.find((c) => c.name === 'Blue')?.value ?? DEFAULT_STICKY_COLOR
-  const mid = STICKY_COLORS.find((c) => c.name === 'Pink')?.value ?? DEFAULT_STICKY_COLOR
-  const note = (bg: string, extra: React.CSSProperties) => ({
-    position: 'absolute' as const,
-    width: 16,
-    height: 16,
-    background: bg,
-    border: '1px solid rgba(17,27,43,0.18)',
-    borderRadius: 1.5,
-    boxShadow: '0 1px 1.5px rgba(0,0,0,0.12)',
-    ...extra,
-  })
   return (
     <span className="relative flex-shrink-0 block" style={{ width: GLYPH_W, height: GLYPH_H }} aria-hidden>
-      <span style={note(back, { left: 3, top: 2, transform: 'rotate(-9deg)' })} />
-      <span style={note(mid, { left: 6, top: 4, transform: 'rotate(5deg)' })} />
-      <span
-        style={note(DEFAULT_STICKY_COLOR, {
-          left: 5,
-          top: 6,
-          transition: 'transform 140ms ease, opacity 140ms ease',
-          transform: lifted ? 'translate(2px, -9px) rotate(-4deg)' : 'none',
-          opacity: lifted ? 0 : 1,
-        })}
-      />
+      <span style={note(BACK_COLOR, { left: 3, top: 2, transform: 'rotate(-9deg)' })} />
+      <span style={note(MID_COLOR, { left: 6, top: 4, transform: 'rotate(5deg)' })} />
+      <span style={note(DEFAULT_STICKY_COLOR, { left: 5, top: 6, ...liftStyle(lifted) })} />
     </span>
   )
 }
@@ -88,10 +98,8 @@ function ImageFrameGlyph({ lifted }: { lifted: boolean }) {
           height: 17,
           border: '1px solid #9ca3af',
           borderRadius: 2,
-          boxShadow: '0 1px 1.5px rgba(0,0,0,0.12)',
-          transition: 'transform 140ms ease, opacity 140ms ease',
-          transform: lifted ? 'translate(2px, -9px) rotate(-4deg)' : 'none',
-          opacity: lifted ? 0 : 1,
+          boxShadow: NOTE_SHADOW,
+          ...liftStyle(lifted),
         }}
       >
         <ImageIcon size={11} />
@@ -132,40 +140,43 @@ function ToolItem({
   const [lifted, setLifted] = useState(false)
   // Where the press started, while the button is held and no pull has begun
   const pressRef = useRef<{ x: number; y: number } | null>(null)
-  // Set once a pull starts, so the click that the browser fires on release
-  // over this same row doesn't ALSO arm click-to-place
+  // Set once a pull starts. Under pointer capture both pointerdown and
+  // pointerup target the row, so browsers dispatch `click` on the row even
+  // when the mouse was released over the board; without this flag a
+  // completed pull would also arm click-to-place.
   const pulledRef = useRef(false)
 
-  useEffect(() => {
-    function onMove(e: PointerEvent) {
-      const start = pressRef.current
-      if (!start) return
-      if (Math.hypot(e.clientX - start.x, e.clientY - start.y) < PULL_THRESHOLD_PX) return
-      pressRef.current = null
-      pulledRef.current = true
-      setLifted(true)
-      onPull(kind)
-    }
-    function onUp() {
-      pressRef.current = null
-      // Canvas has already placed or cancelled by now (its own mouseup
-      // listener); either way the stack is whole again
-      setLifted(false)
-    }
-    window.addEventListener('pointermove', onMove)
-    window.addEventListener('pointerup', onUp)
-    window.addEventListener('pointercancel', onUp)
-    return () => {
-      window.removeEventListener('pointermove', onMove)
-      window.removeEventListener('pointerup', onUp)
-      window.removeEventListener('pointercancel', onUp)
-    }
-  }, [kind, onPull])
-
   function onPointerDown(e: React.PointerEvent) {
-    if (e.button !== 0) return
+    if (e.button !== 0 || !e.isPrimary) return
     pulledRef.current = false
     pressRef.current = { x: e.clientX, y: e.clientY }
+    // Keep receiving moves and the release wherever the pointer goes, so the
+    // stack always hears about the end of its own press. Capture releases
+    // itself on pointerup/pointercancel.
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId)
+    } catch {
+      // The pointer is already gone (or synthetic). The press still counts;
+      // moves and the release just arrive without capture.
+    }
+  }
+
+  function onPointerMove(e: React.PointerEvent) {
+    const start = pressRef.current
+    if (!start) return
+    if (Math.hypot(e.clientX - start.x, e.clientY - start.y) < PULL_THRESHOLD_PX) return
+    pressRef.current = null
+    pulledRef.current = true
+    setLifted(true)
+    onPull(kind)
+  }
+
+  function onPointerUp() {
+    pressRef.current = null
+    // Canvas's own window pointerup listener places or cancels the pull
+    // independently of this handler; this one only puts the stack back
+    // together.
+    setLifted(false)
   }
 
   function handleClick() {
@@ -179,6 +190,9 @@ function ToolItem({
   return (
     <div
       onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={onPointerUp}
       onClick={handleClick}
       data-tour={dataTour}
       className="flex items-center gap-2 px-2 py-2.5 rounded cursor-grab active:cursor-grabbing hover:bg-gray-100 transition-colors group select-none"
